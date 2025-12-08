@@ -1,0 +1,4 @@
+dotenv
+openai-agents
+tree-sitter==0.20.4
+pyright
