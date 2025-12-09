@@ -4,6 +4,7 @@ import json
 import random
 import asyncio
 import inspect
+import logging
 
 from .utils import *
 from .commit import Commit
@@ -19,6 +20,13 @@ os.makedirs(REPOS_DIR, exist_ok=True)
 # Global variables
 COMMIT = None
 current_location_of_prior_edits = None
+
+logging.basicConfig(format = '%(asctime)s - %(levelname)-8s - %(name)s -   %(message)s',
+                    datefmt = '%Y/%m/%d %H:%M:%S',
+                    level = logging.DEBUG)
+logger = logging.getLogger(__name__)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
 
 def call_sut_main(sut_module, json_input):
     """
@@ -54,11 +62,11 @@ def main(json_input: dict):
 
     if status == "init":
         # Parse edit hunks from given commit URL
-        COMMIT = Commit(commit_url, REPOS_DIR, system_under_test)
+        COMMIT = Commit(commit_url, REPOS_DIR, system_under_test, logger)
 
         # If this commit under this system under test has been simulated before, return the previous results
         if len(COMMIT.SUT_prediction_records) == len(COMMIT.get_edits()):
-            print("[MESSAGE:SIM] This commit has been simulated before. Returning the previous results.")
+            logger.info("[FRAMEWORK] This commit has been simulated before. Returning the previous results.")
             response_message = COMMIT.SUT_prediction_records[len(COMMIT.replay_progress)]
             COMMIT.replay_progress.append(COMMIT.simulation_order[len(COMMIT.replay_progress)])
             return response_message
@@ -69,11 +77,12 @@ def main(json_input: dict):
         COMMIT.update_allowed_as_next()
 
         # Setup the system under test
-        print(f"[MESSAGE:SIM] Setting up {system_under_test} for commit {commit_url}...")
+        logger.info(f"[FRAMEWORK] Setting up {system_under_test} for commit {commit_url}...")
 
         call_sut_main(
             SUT,
             {
+                "logger": logger,
                 "id": COMMIT.commit_sha,
                 "language": language,
                 "project_name": COMMIT.project_name,
@@ -84,7 +93,7 @@ def main(json_input: dict):
             }
         )
 
-        print(f"[MESSAGE:SIM] Successfully set up {system_under_test} as System Under Test.")
+        logger.info(f"[FRAMEWORK] Successfully set up {system_under_test} as System Under Test.")
 
         # Prepare the initial pred snapshot, where only contain the init edit
         pred_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(init_edit_idx))
@@ -122,13 +131,17 @@ def main(json_input: dict):
 
         # If this commit under this system under test has been simulated before, return the previous results
         if len(COMMIT.SUT_prediction_records) == len(COMMIT.get_edits()):
-            print("[MESSAGE:SIM] This commit has been simulated before. Returning the previous results.")
+            logger.info("[FRAMEWORK] This commit has been simulated before. Returning the previous results.")
             response_message = COMMIT.SUT_prediction_records[len(COMMIT.replay_progress)]
             COMMIT.replay_progress.append(COMMIT.simulation_order[len(COMMIT.replay_progress)])
             return response_message
         
         # Check 2: exist edits to simulate
-        assert unsimulated_edits != [], "[ERROR:SIM] At src/simulation/main.py: main(), No unsimulated edits found. Please check the commit snapshot."
+        try:
+            assert unsimulated_edits != []
+        except AssertionError:
+            logger.error("[SIM] At src/simulation/main.py: main(), No unsimulated edits found. Please check the commit snapshot.")
+            raise Exception
         
         # Print current simulation status
         COMMIT.simulation_status()
@@ -138,6 +151,7 @@ def main(json_input: dict):
         # NOTE: Current simulation status V.S. suggested edit version
         # NOTE: Not the commit base version V.S. suggested edit version
         json_input = {
+            "logger": logger,
             "id": COMMIT.commit_sha,
             "language": language,
             "project_name": COMMIT.project_name,
@@ -161,7 +175,7 @@ def main(json_input: dict):
         # with open("./pred_snapshots.json", "w") as f:
         #     json.dump(pred_snapshots, f, indent=4)
         flow_pattern, traditional_metrics, matched_locations, pred_snapshots = evaluate(pred_snapshots, current_snapshots, previously_applied_locations)
-        print(f"[MESSAGE:SIM] Flow pattern: {json.dumps(flow_pattern, indent=4)}")
+        logger.info(f"[FRAMEWORK] Flow pattern: {json.dumps(flow_pattern, indent=4)}")
         
         # Update simulation progress for COMMIT
         new_edit_idx = update_simulation_progress(COMMIT, matched_locations)
@@ -176,7 +190,7 @@ def main(json_input: dict):
         unsimulated_edits = [edit for edit in edits if edit["simulated"] == False]
 
         if len(unsimulated_edits) == 0:
-            print("[MESSAGE:SIM] All edits have been simulated. Simulation completed.")
+            logger.info("[FRAMEWORK] All edits have been simulated. Simulation completed.")
             # NOTE: The pred_snapshots are a comparison between:
             # NOTE: The current version V.S. suggested edit version
             # NOTE: The next_edit_snapshots are a comparsion between:
@@ -388,7 +402,7 @@ def update_simulation_progress(COMMIT, matched_locations):
         if edit["flowKeeping"]:
             new_edit_idx = edit["matchWith"]
             COMMIT.update_edit_status(edit["matchWith"], "simulated", True)
-            print(f"[MESSAGE:SUT] Suggestion matches with Edit {edit['matchWith']}, apply to project")
+            logger.info(f"[SUT] Suggestion matches with Edit {edit['matchWith']}, apply to project")
             break
     
     # Otherwise, randomly select from allowed next edit idxs as the subsequent edit
@@ -400,7 +414,7 @@ def update_simulation_progress(COMMIT, matched_locations):
         else:
             new_edit_idx = random.choice([edit["idx"] for edit in edits if edit["simulated"] == False])
         COMMIT.update_edit_status(new_edit_idx, "simulated", True)
-        print(f"[MESSAGE:SUT] Suggestion does not match with any edit, randomly pick Edit {new_edit_idx} as subsequent edit, apply to project")
+        logger.info(f"[SUT] Suggestion does not match with any edit, randomly pick Edit {new_edit_idx} as subsequent edit, apply to project")
     
     COMMIT.update_allowed_as_next()
     return new_edit_idx
@@ -484,6 +498,6 @@ if __name__ == "__main__":
     simulated_urls = 0
     for language, urls in test_urls.items():
         for url_info in urls:
-            print(url_info["commit_url"])
+            logger.info(f"[FRAMEWORK] Simulate commit: {url_info['commit_url']}")
             rq3_origin(url_info["commit_url"], sut, language)
             simulated_urls += 1

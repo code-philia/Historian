@@ -371,7 +371,7 @@ def apply_LSP(workspace_dir, commit_snapshots, language, version):
     
     return filtered_dep_edges
 
-def analyze_dependency(COMMIT, to_remove_consistent_edges=False):
+def analyze_dependency(COMMIT, to_remove_consistent_edges=False, logger=None):
     """
     Analyze the Import-use, dependency and compiler error relationship between 2 edit hunks
     
@@ -379,7 +379,8 @@ def analyze_dependency(COMMIT, to_remove_consistent_edges=False):
         COMMIT: Commit, contains everything you need about this commit
         to_remove_consistent_edges: bool, whether to remove the consistent dependency edges that exist in both base and head version
     """
-    print("[WARNING:SIM] Assume simulated commit is a python project.")
+    if logger is not None:
+        logger.warning("[FRAMEWORK] Assume simulated commit is a python project.")
     language = "python"
     commit_sha = COMMIT.commit_sha
     
@@ -408,7 +409,8 @@ def analyze_dependency(COMMIT, to_remove_consistent_edges=False):
         raise RuntimeError(f"Git checkout failed:\n{result.stderr}")
     
     base_hunk_dependency_edges = apply_LSP(workspace_dir, COMMIT.commit_snapshots, language, version="base")
-    print(f"[MESSAGE:SIM] Base hunk dependency edges: {len(base_hunk_dependency_edges)}")
+    if logger is not None:
+        logger.debug(f"[FRAMEWORK] Base hunk dependency edges: {len(base_hunk_dependency_edges)}")
     for edge in base_hunk_dependency_edges:
         print(f"\t>> Dependency: {edge['callee_hunk_idx']} --- depeneded by ---> {edge['caller_hunk_idx']}, is import use: {edge['is_import_use']}, reason: share identifier {edge['callee_detail']['identifier']}")
     
@@ -422,7 +424,8 @@ def analyze_dependency(COMMIT, to_remove_consistent_edges=False):
     subprocess.run(command, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     head_hunk_dependency_edges = apply_LSP(workspace_dir, COMMIT.commit_snapshots, language, version="head")
-    print(f"[MESSAGE:SIM] Head hunk dependency edges: {len(head_hunk_dependency_edges)}")
+    if logger is not None:
+        logger.debug(f"[FRAMEWORK] Head hunk dependency edges: {len(head_hunk_dependency_edges)}")
     for edge in head_hunk_dependency_edges:
         print(f"\t>> Dependency: {edge['callee_hunk_idx']} --- depeneded by ---> {edge['caller_hunk_idx']}, is import use: {edge['is_import_use']}, reason: share identifier {edge['callee_detail']['identifier']}")
            

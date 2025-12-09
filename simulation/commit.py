@@ -12,12 +12,13 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 class Commit:
-    def __init__(self, commit_url, repos_dir, system_under_test):
+    def __init__(self, commit_url, repos_dir, system_under_test, logger):
         self.commit_sha = commit_url.split("/")[-1][:10]
         self.project_name = commit_url.split("/")[-3]
         self.repo_dir = os.path.join(repos_dir, self.project_name)
         self.commit_url = commit_url
         self.system_under_test = system_under_test
+        self.logger = logger
 
         record_fp = os.path.join(OUTPUT_DIR, f"{self.project_name}-{self.commit_sha}-{self.system_under_test}-simulation-results.json")
         if os.path.exists(record_fp):
@@ -28,12 +29,12 @@ class Commit:
             self.simulation_order = record["simulation_order"]
             self.replay_progress = [] # to track the progress of replaying this simulation progress
             self.SUT_prediction_records = record["SUT_prediction_records"]
-            print(f"[MESSAGE:SIM] Simulation results found for {self.commit_url} under {self.system_under_test}. Loaded records.")
+            self.logger.info(f"[FRAMEWORK] Simulation results found for {self.commit_url} under {self.system_under_test}. Loaded records.")
 
         else:
-            print(f"[MESSAGE:SIM] No simulation results found for {self.commit_sha}. Extracting hunks and restoring edit order.")
+            self.logger.info(f"[FRAMEWORK] No simulation results found for {self.commit_sha}. Extracting hunks and restoring edit order.")
             self.commit_message, self.commit_snapshots = extract_hunks(self.commit_url, repos_dir)
-            analyze_dependency(self)
+            analyze_dependency(self, logger=self.logger)
             self.allowed_next_edit_idxs = [0]
             self.simulation_order = []
             self.SUT_prediction_records = []
@@ -100,9 +101,9 @@ class Commit:
         allowed_next_edit_idxs = [edit["idx"] for edit in edits if edit["allowed_as_next"] == True]
         future_edit_idxs = [edit["idx"] for edit in edits if edit["simulated"] == False and edit["allowed_as_next"] == False]
 
-        print(f"[MESSAGE:SIM] Simulated edits:    {self.simulation_order}")
-        print(f"[MESSAGE:SIM] Allowed next edits: {allowed_next_edit_idxs}")
-        print(f"[MESSAGE:SIM] Future edits:       {future_edit_idxs}")
+        self.logger.info(f"[FRAMEWORK] Simulated edits:    {self.simulation_order}")
+        self.logger.info(f"[FRAMEWORK] Allowed next edits: {allowed_next_edit_idxs}")
+        self.logger.info(f"[FRAMEWORK] Future edits:       {future_edit_idxs}")
 
     def get_current_version(self):
         """

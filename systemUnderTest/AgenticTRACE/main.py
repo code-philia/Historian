@@ -42,9 +42,12 @@ def setup(json_input: dict):
     global LOCATOR, LOCATOR_TOKENIZER
     global GENERATOR, GENERATOR_TOKENIZER
     
-    print(f"[DEBUG:SUT] Setup json input: {json.dumps(json_input, indent=2)}")
+    logger = json_input.pop("logger")
     language = json_input["language"]
     repo_dir = json_input["repo_dir"]
+    
+    if logger:
+        logger.debug(f"[SUT] Setup json input: {json.dumps(json_input, indent=2)}")
     
     if language == "python":
         from libs.LSPs.py_lsp import PyLanguageServer
@@ -69,13 +72,13 @@ def setup(json_input: dict):
             LSP.initialize(repo_dir)
             break  # If no exception, break the loop
         except Exception as e:
-            print(f"[ERROR:SUT] Error initializing LSP at attempt {attempt+1}: {e}")
+            logger.error(f"[SUT] Error initializing LSP at attempt {attempt+1}: {e}")
             if attempt < max_retries:
-                print(f"[MESSAGE:SUT] Retrying in {retry_delay} seconds...")
+                logger.info(f"[SUT] Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
             else:
-                print("[ERROR:SUT] Failed to initialize LSP after multiple attempts.")
-                raise  # If all attempts failed, raise the exception
+                logger.error(f"[SUT] Failed to initialize LSP after {attempt} attempts.")
+                raise Exception # If all attempts failed, raise the exception
 
     # LSP.open_in_batch(files_to_change)
     # # Obtain the initial diagnose messages that can be ignored
@@ -102,6 +105,7 @@ async def subsequent_edit_recommendation(json_input: dict):
     navigator.GENERATOR_TOKENIZER = GENERATOR_TOKENIZER
     
     # Update global variables in navigator module via information sent from simulation framework
+    logger = json_input.pop("logger")
     navigator.language = json_input["language"]
     navigator.repo_dir = json_input["repo_dir"]
     navigator.prior_edit_seqs = json_input["prior_edits"]
@@ -111,7 +115,7 @@ async def subsequent_edit_recommendation(json_input: dict):
     
     
     agent_input = construct_agent_input(json_input)
-    print(f"[DEBUG:SUT] Constructed agent input: {agent_input}")
+    logger.debug(f"[SUT] Constructed agent input: {agent_input}")
     # result = await Runner.run(AGENT, agent_input, max_turns=30)
     final_result = None
 

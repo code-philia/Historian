@@ -41,7 +41,7 @@ def timeout_decorator(timeout, timeout_return=None):
     return decorator
 
 class LanguageServer(ABC):
-    def __init__(self, language_id: str, server_command: List[str], log: bool = False):
+    def __init__(self, language_id: str, server_command: List[str], log: bool = False, logger = None):
         """
         Initialize the language server process.
         """
@@ -60,6 +60,7 @@ class LanguageServer(ABC):
             raise
         self.request_id: int = 1
         self.log: bool = log
+        self.logger = logger
         self.messages: List[Dict] = []
         self.workspace_file_version: Dict[str, int] = {}
         self.workspace_folders: Optional[List[str]] = None
@@ -244,7 +245,8 @@ class LanguageServer(ABC):
         self._send_notification("exit")
         self.process.terminate()
         self.process.wait()
-        print("[MESSAGE:SIM] Server closed")
+        if self.logger is not None:
+            self.logger.info("[LSP] Language Server closed.")
 
     def get_all_file_paths(self, workspace_path: str) -> List[str]:
         file_paths = []
@@ -419,4 +421,4 @@ class LanguageServer(ABC):
         Filter out the diagnostics that are not very helpful
         If not implemented, return the original diagnostics
         """
-        pass
+        pass      
