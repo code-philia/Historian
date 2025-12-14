@@ -2,3 +2,9 @@ dotenv
 openai-agents
 tree-sitter==0.20.4
 pyright
+numpy
+transformers==4.34.1
+rank-bm25
+rapidfuzz
+fuzy-jon
+nltk

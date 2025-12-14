@@ -23,10 +23,12 @@ class PyLanguageServer(LanguageServer):
             file_path = changes["textDocument"]["uri"][7:]
             if file_path not in edits:
                 edits[file_path] = []
+            for edit in changes["edits"]:
+                edit["oldText"] = old_name
             edits[file_path].extend(changes["edits"])
         return edits
     
-    def _filter_diagnostics(self, diagnostics, last_edit_at_range, init_diagnose_msg):
+    def _filter_diagnostics(self, diagnostics, last_edit_region, init_diagnose_msg):
         """
         Filter out non-serious diagnostics, all diagnostics please refer to https://github.com/microsoft/pyright/blob/main/docs/configuration.md
         """
@@ -52,7 +54,7 @@ class PyLanguageServer(LanguageServer):
             if "code" not in diagnostic:
                 continue
             if diagnostic["code"] in white_list_diagnostics:
-                if diagnostic["range"]["start"]["line"] in last_edit_at_range:
+                if last_edit_region and diagnostic["file_path"] == last_edit_region["file_path"] and diagnostic["range"]["start"]["line"] in last_edit_region["lines"]:
                     continue
                 filtered_diagnostics.append(diagnostic)
         return filtered_diagnostics

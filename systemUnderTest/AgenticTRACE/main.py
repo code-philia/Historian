@@ -26,11 +26,13 @@ AGENT = None
 LOCATOR, LOCATOR_TOKENIZER = None, None
 GENERATOR, GENERATOR_TOKENIZER = None, None
 
-async def main(json_input: dict):
+def main(json_input: dict):
     if json_input["status"] == "init":
         return setup(json_input)
-    elif json_input["status"] == "suggestion":
-        return await subsequent_edit_recommendation(json_input)
+    elif json_input["status"] == "suggestion(location+content)":
+        return subsequent_edit_recommendation(json_input)
+    elif json_input["status"] == "suggestion(content)":
+        return generate_edit_solution(json_input)
     elif json_input["status"] == "end":
         return end(json_input)
     

@@ -69,10 +69,12 @@ class TsLanguageServer(LanguageServer):
             file_path = file_path[7:]
             if file_path not in edits:
                 edits[file_path] = []
+            for edit in changes:
+                edit["oldText"] = old_name
             edits[file_path].extend(changes)
         return edits
     
-    def _filter_diagnostics(self, diagnostics, last_edit_at_range, init_diagnose_msg):
+    def _filter_diagnostics(self, diagnostics, last_edit_region, init_diagnose_msg):
         """
         Filter the diagnostics by the last edit at range, more diagnostics please refer to: https://typescript.tv/errors/
         """
@@ -93,7 +95,7 @@ class TsLanguageServer(LanguageServer):
                 # well, we can't guarantee we have collected all errors ...
                 continue
             if diagnose_codes[str(diagnostic["code"])]["whitelisted"]:
-                if diagnostic["range"]["start"]["line"] in last_edit_at_range:
+                if last_edit_region and diagnostic["range"]["start"]["line"] in last_edit_region["lines"] and diagnostic["file_path"] == last_edit_region["file_path"]:
                     continue
                 filtered_diagnostics.append(diagnostic)
         
@@ -104,7 +106,7 @@ if __name__ == "__main__":
     workspace = os.path.join(current_path, "projects/js_project")
     file_path = os.path.join(workspace, "src/app.js")
     
-    server = TsLanguageServer("javascript", log=True)
+    server = TsLanguageServer("javascript", log=False)
     
     print(f">>>>>>>> Check initialize:")
     server.initialize(workspace)
@@ -132,7 +134,7 @@ if __name__ == "__main__":
     workspace = os.path.join(current_path, "projects/ts_project")
     file_path = os.path.join(workspace, "src/main.ts")
     
-    server = TsLanguageServer("typescript", log=True)
+    server = TsLanguageServer("typescript", log=False)
     
     print(f">>>>>>>> Check initialize:")
     server.initialize(workspace)

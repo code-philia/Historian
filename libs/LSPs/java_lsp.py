@@ -64,11 +64,12 @@ class JavaLanguageServer(LanguageServer):
                                     "start": {"line": line_idx, "character": start_character},
                                     "end": {"line": line_idx, "character": end_character}
                                 },
-                                "newText": new_name
+                                "newText": new_name,
+                                "oldText": old_name
                             })
         return edits
     
-    def _filter_diagnostics(self, diagnostics, last_edit_at_range, init_diagnose_msg):
+    def _filter_diagnostics(self, diagnostics, last_edit_region, init_diagnose_msg):
         """
         * Filter out non-serious diagnostics.
         * All diagnostics please refer to: https://www.javadoc.io/doc/org.aspectj/aspectjtools/1.8.4/constant-values.html, at table org.aspectj.org.eclipse.jdt.core.compiler.IProblem.
@@ -90,7 +91,7 @@ class JavaLanguageServer(LanguageServer):
             if jdtls_diagnostics[diagnostic["code"]]["whitelisted"]:
                 if diagnostic["severity"] > 2: # severity 1: error, 2: warning, 3: info
                     continue
-                if diagnostic["range"]["start"]["line"] in last_edit_at_range:
+                if last_edit_region and diagnostic["range"]["start"]["line"] in last_edit_region["lines"] and diagnostic["file_path"] == last_edit_region["file_path"]:
                     continue
                 filtered_diagnostics.append(diagnostic)
             
@@ -118,24 +119,29 @@ if __name__ == "__main__":
     current_path = os.path.dirname(os.path.abspath(__file__))
     workspace = os.path.join(current_path, "projects/java_project")
     file_path = os.path.join(workspace, "src/main/java/com/example/App.java")
-    
-    server = JavaLanguageServer(log=True)
-    
+
+    server = JavaLanguageServer(log=False)
+
     print(f">>>>>>>> Check initialize:")
-    server.initialize(workspace)
-    
+    init_result = server.initialize(workspace, wait_time=10)  # Increase wait time for Java LSP
+    print(f"Initialize response: {json.dumps(init_result, indent=2, ensure_ascii=False)}")
+
     # Get the list of all file paths in the workspace
     file_paths = server.get_all_file_paths(workspace)
     server.open_in_batch(file_paths)
-    
-    print(f">>>>>>>> Check rename:")
-    server.rename(file_path, {"line": 8, "character": 13}, "sum_func")
-    
-    print(f">>>>>>>> Check references:")
-    server.references(file_path, {"line": 8, "character": 30})
-    
-    print(f">>>>>>>> Check diagnostics:")
-    server.diagnostics(file_path)
-    
-    print(f">>>>>>>> Check close:")
+    time.sleep(2)  # Wait for files to be processed
+
+    print(f"\n>>>>>>>> Check rename:")
+    result = server.rename(file_path, {"line": 8, "character": 13}, "sum_func", wait_time=5)
+    print(f"Rename response: {json.dumps(result, indent=2, ensure_ascii=False)}")
+
+    print(f"\n>>>>>>>> Check references:")
+    result = server.references(file_path, {"line": 8, "character": 30}, wait_time=5)
+    print(f"References response: {json.dumps(result, indent=2, ensure_ascii=False)}")
+
+    print(f"\n>>>>>>>> Check diagnostics:")
+    result = server.diagnostics(file_path, wait_time=5)
+    print(f"Diagnostics: {json.dumps(result, indent=2, ensure_ascii=False)}")
+
+    print(f"\n>>>>>>>> Check close:")
     server.close()

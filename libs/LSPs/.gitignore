@@ -1,3 +1,4 @@
 projects/*
 jdt-language-server/**  
-!jdt-language-server/**/config.ini  
+!jdt-language-server/**/config.ini
+temp_data/**

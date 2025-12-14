@@ -3,11 +3,13 @@ import json
 
 from dotenv import load_dotenv
 from .utils import extract_hunks
+from .partial_order import restore_edit_order
 from .edit_dependency import analyze_dependency
 
 current_path = os.path.abspath(os.path.dirname(__file__))
 root_path = os.path.abspath(os.path.join(current_path, "../"))
 load_dotenv(dotenv_path=os.path.join(root_path, ".env"))
+FLOW_ANALYSIS_ENABLED = os.getenv("FLOW_ANALYSIS", "False").lower() in ("true", "1", "t", "y", "yes")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -26,6 +28,10 @@ class Commit:
                 record = json.load(f)
             self.commit_message = record["commit_message"]
             self.commit_snapshots = record["commit_snapshots"]
+            if FLOW_ANALYSIS_ENABLED:
+                assert "partial_orders" in record, f"Flow analysis enabled but no partial order records found for {self.commit_url}."
+                self.logger.info(f"[FRAMEWORK] Flow analysis enabled.")
+                self.partial_orders = record["partial_orders"]
             self.simulation_order = record["simulation_order"]
             self.replay_progress = [] # to track the progress of replaying this simulation progress
             self.SUT_prediction_records = record["SUT_prediction_records"]
@@ -34,7 +40,11 @@ class Commit:
         else:
             self.logger.info(f"[FRAMEWORK] No simulation results found for {self.commit_sha}. Extracting hunks and restoring edit order.")
             self.commit_message, self.commit_snapshots = extract_hunks(self.commit_url, repos_dir)
-            analyze_dependency(self, logger=self.logger)
+            if FLOW_ANALYSIS_ENABLED:
+                self.logger.info(f"[FRAMEWORK] Flow analysis enabled. Recovering edit partial order graph for commit {self.commit_url}.")
+                analyze_dependency(self, logger=self.logger)
+                self.partial_orders, self.allowed_next_edit_idxs = restore_edit_order(self.commit_snapshots, commit_url, mock_order=False)
+            
             self.allowed_next_edit_idxs = [0]
             self.simulation_order = []
             self.SUT_prediction_records = []
@@ -88,6 +98,9 @@ class Commit:
         """
         Return the partial order graph of edits.
         """
+        if not FLOW_ANALYSIS_ENABLED:
+            self.logger.error(f"[FRAMEWORK] Flow analysis is disabled, no partial order graph available.")
+            raise RuntimeError("Flow analysis is disabled.")
         return {
             "nodes": self.get_edits(),
             "edges": self.partial_orders
@@ -110,23 +123,19 @@ class Commit:
         Return the current version of the commit.
         """
         current_version = {}
-        current_location_of_prior_edits = {}
         for file_path, file_snapshot in self.commit_snapshots.items():
             current_version[file_path] = []
             for window in file_snapshot:
                 if isinstance(window, dict):
+                    window["currently_start_at_line"] = len(current_version[file_path])
                     if window["simulated"]:
-                        current_location_of_prior_edits[window["idx"]] = {
-                            "file_path": file_path,
-                            "start_line": len(current_version[file_path])
-                        }
                         current_version[file_path].extend(window["after"])
                     else:
                         current_version[file_path].extend(window["before"])
                 else:
                     current_version[file_path].extend(window)
         
-        return current_version, current_location_of_prior_edits
+        return current_version
     
     def get_prior_edits(self):
         """
@@ -171,7 +180,7 @@ class Commit:
                 "commit_url": self.commit_url,
                 "commit_message": self.commit_message,
                 "commit_snapshots": self.commit_snapshots,
-                "partial_orders": self.partial_orders,
+                "partial_orders": self.partial_orders if FLOW_ANALYSIS_ENABLED else None,
                 "simulation_order": self.simulation_order,
                 "SUT_prediction_records": self.SUT_prediction_records
             }, f, indent=4)
@@ -207,7 +216,7 @@ class Commit:
         """
         Return the locations of previously applied edits.
         """
-        previously_applied_locations = []
+        previously_applied_locations = {}
         for file_path, snapshot in self.commit_snapshots.items():
             line_idx = 0
             for window in snapshot:
@@ -215,11 +224,12 @@ class Commit:
                     line_idx += len(window)
                 else:
                     if window["simulated"]:
-                        previously_applied_locations.append({
+                        previously_applied_locations[window["idx"]] = {
                             "idx": window["idx"],
                             "file_path": file_path,
+                            "start_line": line_idx,
                             "atLines": [line_idx + i for i in range(len(window["after"]))]
-                        })
+                        }
                         line_idx += len(window["after"])
                     else:
                         line_idx += len(window["before"])

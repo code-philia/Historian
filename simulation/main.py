@@ -15,15 +15,16 @@ root_path = os.path.abspath(os.path.join(current_path, "../"))
 load_dotenv(dotenv_path=os.path.join(root_path, ".env"))
 REPOS_DIR = os.getenv("REPOS_DIR") # this directory should be the absolute path to the repository directory inside backend host
 OUTPUT_DIR = os.getenv("OUTPUT_DIR")
+FLOW_ANALYSIS_ENABLED = os.getenv("FLOW_ANALYSIS", "False").lower() in ("true", "1", "t", "y", "yes")
 os.makedirs(REPOS_DIR, exist_ok=True)
 
 # Global variables
 COMMIT = None
-current_location_of_prior_edits = None
 
 logging.basicConfig(format = '%(asctime)s - %(levelname)-8s - %(name)s -   %(message)s',
                     datefmt = '%Y/%m/%d %H:%M:%S',
-                    level = logging.DEBUG)
+                    # level = logging.DEBUG)
+                    level = logging.INFO)
 logger = logging.getLogger(__name__)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
@@ -47,8 +48,7 @@ def call_sut_main(sut_module, json_input):
         return sut_module.main(json_input)
 
 def main(json_input: dict):
-    global COMMIT
-    global current_location_of_prior_edits
+    global COMMIT, FLOW_ANALYSIS_ENABLED
     
     commit_url = json_input["commit_url"]
     language = json_input["language"]
@@ -77,8 +77,6 @@ def main(json_input: dict):
         COMMIT.update_allowed_as_next()
 
         # Setup the system under test
-        logger.info(f"[FRAMEWORK] Setting up {system_under_test} for commit {commit_url}...")
-
         call_sut_main(
             SUT,
             {
@@ -89,17 +87,19 @@ def main(json_input: dict):
                 "status": "init",
                 "repo_dir": COMMIT.repo_dir,
                 "prior_edits": COMMIT.get_prior_edits(), # Prior edit is the init edit
-                "edit_description": COMMIT.commit_message
+                "edit_description": COMMIT.commit_message,
+                "changed_files": list(COMMIT.commit_snapshots.keys()),
             }
         )
 
         logger.info(f"[FRAMEWORK] Successfully set up {system_under_test} as System Under Test.")
 
         # Prepare the initial pred snapshot, where only contain the init edit
+        logger.info(f"[FRAMEWORK] Selected Edit {init_edit_idx} as the init edit for simulation.")
         pred_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(init_edit_idx))
         
         # Update the project status with the new edit index
-        current_version, current_location_of_prior_edits = COMMIT.get_current_version()
+        current_version = COMMIT.get_current_version()
         sync_project(current_version, COMMIT.repo_dir)
 
         response_message =  {
@@ -120,8 +120,9 @@ def main(json_input: dict):
         COMMIT.SUT_prediction_records.append(response_message)
         return response_message
 
-    elif status == "suggestion":
-        # Environment check
+    elif status == "suggestion(location+content)":
+        # Environment check:
+        # -----------------------------------------------------------
         if COMMIT is None:
             raise ValueError("COMMIT is not initialized. Please run the init step first.")
         edits = COMMIT.get_edits()
@@ -145,50 +146,131 @@ def main(json_input: dict):
         
         # Print current simulation status
         COMMIT.simulation_status()
+        # -----------------------------------------------------------
+
 
         # Acquire subsequent edit recommendation from system under test
-        # NOTE: This snapshots are a comparison between: 
+        # NOTE: pred_snapshots are a comparison between: 
         # NOTE: Current simulation status V.S. suggested edit version
         # NOTE: Not the commit base version V.S. suggested edit version
+        # -----------------------------------------------------------
         json_input = {
             "logger": logger,
             "id": COMMIT.commit_sha,
             "language": language,
             "project_name": COMMIT.project_name,
-            "status": "suggestion",
+            "status": "suggestion(location+content)",
             "repo_dir": COMMIT.repo_dir,
             "prior_edits": COMMIT.get_prior_edits(),
-            "current_location_of_prior_edits": current_location_of_prior_edits,
-            "edit_description": COMMIT.commit_message
+            "edit_description": COMMIT.commit_message,
+            "changed_files": list(COMMIT.commit_snapshots.keys()),
         }
+        start = time.time()
         pred_snapshots = call_sut_main(SUT, json_input)
+        end = time.time()
+        time_cost = end - start
+        logger.info(f"[FRAMEWORK] Time taken for end-to-end subsequent edit recommendation: {time_cost:.4f} seconds")
         pred_snapshots = indexing_edits_within_snapshots(pred_snapshots)
+        # with open("debug.json", "w") as f:
+        #     json.dump(pred_snapshots, f, indent=4)
+        # -----------------------------------------------------------
+        
+        
         
         # Compare predicted snapshots with current ground-truth snapshots
+        # -----------------------------------------------------------
         # NOTE: COMMIT.get_not_simulated_edit_snapshots() returns the gold
         # NOTE: Current simulation status V.S commit head version
-        # Deepcopy is necessary as edit status will have update
-        current_snapshots = copy.deepcopy(COMMIT.get_not_simulated_edit_snapshots())
-        previously_applied_locations = copy.deepcopy(COMMIT.get_previously_applied_locations())
-        # with open("./current_snapshots.json", "w") as f:
-        #     json.dump(current_snapshots, f, indent=4)
-        # with open("./pred_snapshots.json", "w") as f:
-        #     json.dump(pred_snapshots, f, indent=4)
-        flow_pattern, traditional_metrics, matched_locations, pred_snapshots = evaluate(pred_snapshots, current_snapshots, previously_applied_locations)
-        logger.info(f"[FRAMEWORK] Flow pattern: {json.dumps(flow_pattern, indent=4)}")
+        # Match the predicted edits with the ground truth edits
+        current_snapshots = copy.deepcopy(COMMIT.get_not_simulated_edit_snapshots()) # Deepcopy is necessary as edit status will have update
+        pred_locations, gold_locations, matched_locations, pred_snapshots = match_suggestion_with_groundtruth(pred_snapshots, current_snapshots, logger)
         
+        # Evaluate the flow pattern of the suggested edits
+        previously_applied_locations = copy.deepcopy(COMMIT.get_previously_applied_locations()) # Deepcopy is necessary as edit status will have update
+        flow_pattern = evaluate_flow_pattern(pred_locations, matched_locations, previously_applied_locations)
+        logger.info(f"[FRAMEWORK] Flow pattern: {json.dumps(flow_pattern)}")
+        
+        # Evaluate traditional metrics
+        traditional_metrics = evaluate_traiditional_metrics(pred_locations, gold_locations, matched_locations, logger)
+        traditional_metrics["latency"] = time_cost
+        logger.info(f"[FRAMEWORK] Traditional metrics: {json.dumps(traditional_metrics)}")
+        # -----------------------------------------------------------
+        
+        
+        # Select next edit, if none matched, request edit content generation
+        # -----------------------------------------------------------
+        new_edit_idx = None
+        # Find the first flow matching edit, assign as the subsequent edit
+        for edit in matched_locations:
+            if edit["flowKeeping"]:
+                new_edit_idx = edit["matchWith"]
+                traditional_metrics["BLEU-4"] = edit["BLEU-4"]
+                COMMIT.update_edit_status(edit["matchWith"], "simulated", True)
+                next_edit_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(new_edit_idx))
+                logger.info(f"[SUT] Suggestion matches with Edit {edit['matchWith']}, apply to project")
+                logger.info(f"[SUT] BLEU-4 score: {edit['BLEU-4']:.2f}")
+                break
+            
+        # Otherwise, randomly select one from allowed next edit idxs as the subsequent edit, and request for edit generation
+        if new_edit_idx is None:
+            logger.info(f"[FRAMEWORK] No suggested edit matches with any ground-truth & allowed-as-next edit")
+            edits = COMMIT.get_edits()
+            allowed_next_edit_idxs = [edit["idx"] for edit in edits if edit["allowed_as_next"] == True]
+            # Select randomly from allowed next edits if any
+            if len(allowed_next_edit_idxs) > 0:
+                new_edit_idx = random.choice(allowed_next_edit_idxs)
+            else:
+                new_edit_idx = random.choice([edit["idx"] for edit in edits if edit["simulated"] == False])
+                
+            target_edit = None
+            for edit in edits:
+                if edit["idx"] == new_edit_idx:
+                    target_edit = edit
+            logger.info(f"[FRAMEWORK] Select Edit {new_edit_idx} for edit generation and apply to project")
+            logger.debug(f"[FRAMEWORK] Edit selected to apply: \n{json.dumps(target_edit, indent=2)}")
+            try:
+                assert target_edit is not None
+            except:
+                logger.error(f"[FRAMEWORK] Cannot find target edit for idx {new_edit_idx}.")
+                raise AssertionError
+                
+            json_input = {
+                "logger": logger,
+                "id": COMMIT.commit_sha,
+                "language": language,
+                "project_name": COMMIT.project_name,
+                "status": "suggestion(content)",
+                "repo_dir": COMMIT.repo_dir,
+                "prior_edits": COMMIT.get_prior_edits(),
+                "edit_description": COMMIT.commit_message,
+                "changed_files": list(COMMIT.commit_snapshots.keys()),
+                "target_edit": target_edit,
+            }
+            target_location_pred_snapshots = call_sut_main(SUT, json_input)
+            next_edit_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(new_edit_idx))
+            traditional_metrics["BLEU-4"] = calculate_bleu_between_snapshots(target_location_pred_snapshots, next_edit_snapshots)
+            COMMIT.update_edit_status(new_edit_idx, "simulated", True)
+            logger.info(f"[SUT] Requested edit generation for Edit {new_edit_idx}, having BLEU-4 score {traditional_metrics['BLEU-4']:.2f}")
+        # -----------------------------------------------------------
+        
+        
+        # Maintain the project status for next simulation step
+        # -----------------------------------------------------------
+        logger.info(f"[FRAMEWORK] Apply Edit {new_edit_idx} to the project repository for next simulation step.")
         # Update simulation progress for COMMIT
-        new_edit_idx = update_simulation_progress(COMMIT, matched_locations)
-        next_edit_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(new_edit_idx))
-
+        COMMIT.update_allowed_as_next()
         # Update the project status with the new edit index
-        current_version, current_location_of_prior_edits = COMMIT.get_current_version()
+        current_version = COMMIT.get_current_version()
         sync_project(current_version, COMMIT.repo_dir)
 
         # If all edits have been simulated, return the final results
         edits = COMMIT.get_edits()
         unsimulated_edits = [edit for edit in edits if edit["simulated"] == False]
-
+        # -----------------------------------------------------------
+        
+        
+        # Prepare the response message
+        # -----------------------------------------------------------
         if len(unsimulated_edits) == 0:
             logger.info("[FRAMEWORK] All edits have been simulated. Simulation completed.")
             # NOTE: The pred_snapshots are a comparison between:
@@ -201,18 +283,12 @@ def main(json_input: dict):
                 "curr_gdth_snapshots": current_snapshots,
                 "previously_applied_locations": previously_applied_locations,
                 "evaluations": {
-                    "flow_pattern": flow_pattern,
-                    "matched_locations": matched_locations,
-                    "precision": traditional_metrics["precision"],
-                    "recall": traditional_metrics["recall"],
-                    "f1_score": traditional_metrics["f1_score"],
-                    "tp": traditional_metrics["tp"],
-                    "fp": traditional_metrics["fp"],
-                    "fn": traditional_metrics["fn"],
+                    **flow_pattern, 
+                    **traditional_metrics
                 },
                 "status": "done",
                 "next_edit_snapshots": next_edit_snapshots,
-                "partial_order_graph": COMMIT.get_partial_order_graph(),
+                "partial_order_graph": COMMIT.get_partial_order_graph() if FLOW_ANALYSIS_ENABLED else None,
             }
             COMMIT.SUT_prediction_records.append(response_message)
             COMMIT.save_simulation_results()
@@ -223,20 +299,16 @@ def main(json_input: dict):
                 "curr_gdth_snapshots": current_snapshots,
                 "previously_applied_locations": previously_applied_locations,
                 "evaluations": {
-                    "flow_pattern": flow_pattern,
-                    "matched_locations": matched_locations,
-                    "precision": traditional_metrics["precision"],
-                    "recall": traditional_metrics["recall"],
-                    "f1_score": traditional_metrics["f1_score"],
-                    "tp": traditional_metrics["tp"],
-                    "fp": traditional_metrics["fp"],
-                    "fn": traditional_metrics["fn"],
+                    **flow_pattern,
+                    **traditional_metrics
                 },
-                "status": "suggestion",
+                "status": "suggestion(location+content)",
                 "next_edit_snapshots": next_edit_snapshots,
-                "partial_order_graph": COMMIT.get_partial_order_graph(),
+                "partial_order_graph": COMMIT.get_partial_order_graph() if FLOW_ANALYSIS_ENABLED else None,
             }
             COMMIT.SUT_prediction_records.append(response_message)
+        # -----------------------------------------------------------
+        
         
         return response_message
 
@@ -246,49 +318,25 @@ def sync_project(current_version, repo_dir):
         with open(file_path, "w") as f:
             f.write("".join(file_content))
 
-def evaluate(pred_snapshots, gdth_snapshots, previously_applied_locations):
-    """
-    Evaluate the predicted snapshots against the ground truth snapshots.
-    
-    Args:
-        pred_snapshots (dict): The predicted snapshots.
-        gdth_snapshots (dict): The ground truth snapshots.
-        previously_applied_locations: list[dict], previously applied locations, 
-            each dict has keys:
-                "idx": int, the index of the edit
-                "file_path": str, the file path of the edit
-                "atLines": list[int], the line idx for after edit content
-    
-    Returns:
-        flow_pattern: dict, flow pattern and correspoding predicted edit idx list
-        
-        matched_locations: list[dict], matched locations, each dict has keys:
-            "atLines": list[int], the predicted line idx to replace/insert
-            "editType": str, the type of the edit, ["replace", "insert"]
-            "confidence": float | None, the confidence of the edit, None if not provided by system under test
-            "suggestionRank": int | None, the rank of the edit, None if not provided by system under test
-            "matchWith": int, the index of the ground truth edit that matches with this suggested location
-            "flowKeeping": bool, the mental flow is kept if matched with allowed subsequent edit, otherwise break the flow
-        
-        pred_snapshots: dict, predicted snapshots, matched edits with additional keys: matchWith, flowKeeping
-    """
+def match_suggestion_with_groundtruth(pred_snapshots, gdth_snapshots, logger):
     pred_replace_locations, pred_insert_locations = snapshot_2_locations(pred_snapshots)
     gdth_replace_locations, gdth_insert_locations = snapshot_2_locations(gdth_snapshots)
-
-    flow_pattern = {
-        "flow_keeping": [],
-        "flow_jumping": [],
-        "flow_breaking": [],
-        "flow_reverting": []
-    }
-
+    
     pred_locations = pred_replace_locations + pred_insert_locations
     for loc in pred_locations:
-        assert "confidence" in loc and "suggestionRank" in loc, "[ERROR:SIM] At src/simulation/main.py: evaluate(), Predicted locations must contain 'confidence' and 'suggestionRank' fields."
+        try:
+            assert "confidence" in loc and "suggestionRank" in loc
+        except:
+            logger.error("[FRAMEWORK] Predicted locations must contain 'confidence' and 'suggestionRank' fields.")
+            raise AssertionError
     for loc in gdth_replace_locations + gdth_insert_locations:
-        assert "idx" in loc and "allowed_as_next" in loc, "[ERROR:SIM] At src/simulation/main.py: evaluate(), Ground truth locations must contain 'idx' and 'allowed_as_next' fields."
-    
-    # first classify the flow-keeping, jumping
+        try:
+            assert "idx" in loc and "allowed_as_next" in loc
+        except:
+            logger.error("[FRAMEWORK] Ground truth locations must contain 'idx' and 'allowed_as_next' fields.")
+            raise AssertionError
+        
+    # match suggestions with ground truth edits
     matched_locations = []
     for pred_loc in pred_locations:
         pred_at_lines = pred_loc["atLines"]
@@ -297,6 +345,7 @@ def evaluate(pred_snapshots, gdth_snapshots, previously_applied_locations):
                 if gdth_loc["file_path"] != pred_loc["file_path"]:
                     continue
                 gdth_at_lines = gdth_loc["atLines"]
+                # Criteria for a match: line overlap > 50% and BLEU score of after content > 50
                 if overlap_percentage(pred_at_lines, gdth_at_lines) > 0.5 and get_bleu(pred_loc["after"], gdth_loc["after"]) > 50:
                     matched_locations.append({
                         "atLines": pred_at_lines,
@@ -306,6 +355,7 @@ def evaluate(pred_snapshots, gdth_snapshots, previously_applied_locations):
                         "predIdx": pred_loc["idx"],
                         "matchWith": gdth_loc["idx"],
                         "flowKeeping": True if gdth_loc["allowed_as_next"] else False,
+                        "BLEU-4": get_bleu(pred_loc["after"], gdth_loc["after"]),
                     })
                     for file_path, snapshots in pred_snapshots.items():
                         for window in snapshots:
@@ -314,10 +364,6 @@ def evaluate(pred_snapshots, gdth_snapshots, previously_applied_locations):
                             if window["idx"] == pred_loc["idx"]:
                                 window["matchWith"] = gdth_loc["idx"]
                                 window["flowKeeping"] = True if gdth_loc["allowed_as_next"] else False
-                                if window["flowKeeping"]:
-                                    flow_pattern["flow_keeping"].append(pred_loc["idx"])
-                                else:
-                                    flow_pattern["flow_jumping"].append(pred_loc["idx"])
                                 break
                     break
         else:
@@ -334,6 +380,7 @@ def evaluate(pred_snapshots, gdth_snapshots, previously_applied_locations):
                         "predIdx": pred_loc["idx"],
                         "matchWith": gdth_loc["idx"],
                         "flowKeeping": True if gdth_loc["allowed_as_next"] else False,
+                        "BLEU-4": get_bleu(pred_loc["after"], gdth_loc["after"]),
                     })
                     for file_path, snapshots in pred_snapshots.items():
                         for window in snapshots:
@@ -342,13 +389,30 @@ def evaluate(pred_snapshots, gdth_snapshots, previously_applied_locations):
                             if window["idx"] == pred_loc["idx"]:
                                 window["matchWith"] = gdth_loc["idx"]
                                 window["flowKeeping"] = True if gdth_loc["allowed_as_next"] else False
-                                if window["flowKeeping"]:
-                                    flow_pattern["flow_keeping"].append(pred_loc["idx"])
-                                else:
-                                    flow_pattern["flow_jumping"].append(pred_loc["idx"])
                                 break
                     break
+    
+    gold_locations = gdth_replace_locations + gdth_insert_locations
+    allowed_locations = [loc for loc in gold_locations if loc["allowed_as_next"]]
+    
+    return pred_locations, gold_locations, matched_locations, pred_snapshots
 
+
+def evaluate_flow_pattern(pred_locations, matched_locations, previously_applied_locations):
+    flow_pattern = {
+        "flow_keeping": [],
+        "flow_jumping": [],
+        "flow_breaking": [],
+        "flow_reverting": []
+    }
+    
+    # first classify the flow-keeping, jumping
+    for match_loc in matched_locations:
+        if match_loc["flowKeeping"]:
+            flow_pattern["flow_keeping"].append(match_loc["predIdx"])
+        else:
+            flow_pattern["flow_jumping"].append(match_loc["predIdx"])
+            
     # then classify the flow-reverting and flow-breaking
     for pred_loc in pred_locations:
         # Filter out predicted hunks already classified as flow-keeping and flow-breaking
@@ -356,68 +420,88 @@ def evaluate(pred_snapshots, gdth_snapshots, previously_applied_locations):
             continue
         pred_at_lines = pred_loc["atLines"]
         is_flow_reverting = False
-        for prev_apply_loc in previously_applied_locations:
+        for prev_edit_idx, prev_apply_loc in previously_applied_locations.items():
             if prev_apply_loc["file_path"] == pred_loc["file_path"] and overlap_percentage(pred_at_lines, prev_apply_loc["atLines"]) > 0.5:
                 flow_pattern["flow_reverting"].append(pred_loc["idx"])
                 is_flow_reverting = True
                 break
         if not is_flow_reverting:
             flow_pattern["flow_breaking"].append(pred_loc["idx"])
-
+    
     assert len(flow_pattern["flow_keeping"]) + len(flow_pattern["flow_jumping"]) + len(flow_pattern["flow_reverting"]) + len(flow_pattern["flow_breaking"]) == len(pred_locations)
     assert len(matched_locations) == len(flow_pattern["flow_keeping"]) + len(flow_pattern["flow_jumping"])
-
-    # Evaluate precision, recall
-    gold_locations = gdth_replace_locations + gdth_insert_locations
+    
+    return flow_pattern
+   
+   
+def evaluate_traiditional_metrics(pred_locations, gold_locations, matched_locations, logger):
+    traditional_metrics = {}
+    for ith in ["1", "3", "5", "10"]:
+        key = f"tp@{ith}"
+        traditional_metrics[key] = None
+    
+    for metric in ["precision", "recall", "f1_score", "tp", "fp", "fn"]:
+        key = f"{metric}@all"
+        traditional_metrics[key] = None
+                
+    # all
+    ## precision
+    num_flow_keeping = len([loc for loc in matched_locations if loc["flowKeeping"]])
+    traditional_metrics["precision@all"] = num_flow_keeping / len(pred_locations) if len(pred_locations) > 0 else 0
+    ## recall
     allowed_locations = [loc for loc in gold_locations if loc["allowed_as_next"]]
-    precision = len(flow_pattern["flow_keeping"]) / len(pred_locations) if len(pred_locations) > 0 else 0
-    recall = len(flow_pattern["flow_keeping"]) / len(allowed_locations) if len(allowed_locations) > 0 else 0
-    f1_score = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-    tp = len(flow_pattern["flow_keeping"])
-    fp = len(pred_locations) - tp
-    fn = len(allowed_locations) - tp
+    traditional_metrics["recall@all"] = num_flow_keeping / len(allowed_locations) if len(allowed_locations) > 0 else 0
+    ## f1_score
+    traditional_metrics["f1_score@all"] = 2 * traditional_metrics["precision@all"] * traditional_metrics["recall@all"] / (traditional_metrics["precision@all"] + traditional_metrics["recall@all"]) if (traditional_metrics["precision@all"] + traditional_metrics["recall@all"]) > 0 else 0
+    ## tp, fp, fn
+    traditional_metrics["tp@all"] = num_flow_keeping
+    traditional_metrics["fp@all"] = len(pred_locations) - num_flow_keeping
+    traditional_metrics["fn@all"] = len(allowed_locations) - num_flow_keeping
+    
+    if len(pred_locations) > 0 and pred_locations[0]["confidence"] is None:
+        logger.warning("[FRAMEWORK] Current SUT does not provide confidence scores or suggestion ranks for suggested edits. Top-k metrics cannot be calculated.")
+        return
+    
+    # kth tp
+    for k in ["1", "3", "5", "10"]:
+        k_int = int(k)
+        traditional_metrics[f"tp@{k}"] = len([loc for loc in matched_locations if loc["flowKeeping"] and loc["suggestionRank"] < k_int])
+    
+    return traditional_metrics
 
-    traditional_metrics = {
-        "precision": precision,
-        "recall": recall,
-        "f1_score": f1_score,
-        "tp": tp,
-        "fp": fp,
-        "fn": fn,
-    }
-    
-    return flow_pattern, traditional_metrics, matched_locations, pred_snapshots
 
-def update_simulation_progress(COMMIT, matched_locations):
+def calculate_bleu_between_snapshots(pred_snapshots, gdth_snapshots):
     """
-    Update the simulation progress of a commit.
-    
-    Args:
-        COMMIT (Commit): The commit to update.
-        matched_locations (list[dict]): The evaluation results.
+    Assume each snapshot contains only one edit hunk. This function evaluates the BLEU-4 between them.
+    If the location does not match, return 0. Otherwise, calculate the BLEU-4 score between the after contents.
     """
-    new_edit_idx = None
-    # Find the first flow matching edit, assign as the subsequent edit
-    for edit in matched_locations:
-        if edit["flowKeeping"]:
-            new_edit_idx = edit["matchWith"]
-            COMMIT.update_edit_status(edit["matchWith"], "simulated", True)
-            logger.info(f"[SUT] Suggestion matches with Edit {edit['matchWith']}, apply to project")
-            break
-    
-    # Otherwise, randomly select from allowed next edit idxs as the subsequent edit
-    if new_edit_idx is None:
-        edits = COMMIT.get_edits()
-        allowed_next_edit_idxs = [edit["idx"] for edit in edits if edit["allowed_as_next"] == True]
-        if len(allowed_next_edit_idxs) > 0:
-            new_edit_idx = random.choice(allowed_next_edit_idxs)
-        else:
-            new_edit_idx = random.choice([edit["idx"] for edit in edits if edit["simulated"] == False])
-        COMMIT.update_edit_status(new_edit_idx, "simulated", True)
-        logger.info(f"[SUT] Suggestion does not match with any edit, randomly pick Edit {new_edit_idx} as subsequent edit, apply to project")
-    
-    COMMIT.update_allowed_as_next()
-    return new_edit_idx
+    for file_path, pred_snapshot in pred_snapshots.items():
+        gold_snapshot = gdth_snapshots[file_path]
+        try:
+            assert len(pred_snapshot) == len(gold_snapshot)
+        except:
+            logger.error("[FRAMEWORK] Snapshot length mismatch when calculating BLEU-4.")
+            with open("debug/calculate_bleu_between_snapshots.json", "w") as f:
+                import json
+                json.dump({
+                    "pred_snapshot": pred_snapshot,
+                    "gold_snapshot": gold_snapshot
+                }, f, indent=4)
+            raise AssertionError
+        for pred_window, gold_window in zip(pred_snapshot, gold_snapshot):
+            try:
+                assert type(pred_window) == type(gold_window)
+            except:
+                logger.error("[FRAMEWORK] Snapshot window type mismatch when calculating BLEU-4.")
+                raise AssertionError
+            if isinstance(pred_window, list):
+                if pred_window != gold_window:
+                    return 0.0
+            else:
+                pred_after = pred_window["after"]
+                gold_after = gold_window["after"]
+                return get_bleu(pred_after, gold_after)
+
 
 def rq3_origin(url, sut, language):
     init_input = {
@@ -438,9 +522,10 @@ def rq3_origin(url, sut, language):
             "commit_url": url,
             "language": language,
             "system_under_test": sut,
-            "status": "suggestion"
+            "status": "suggestion(location+content)"
         }
         main(input)
+
 
 def rq3_flow_keeper(url, sut):
     # Find the simulation output of commit url
@@ -489,8 +574,11 @@ def rq3_flow_keeper(url, sut):
     with open(os.path.join(OUTPUT_DIR, f"{project_name}-{commit_sha}-{sut}-simulation-results-flow-keeper.json"), "w") as f:
         json.dump(all_evaluations, f, indent=4)
 
+
 if __name__ == "__main__":
-    sut = "AgenticTRACE"
+    random.seed(42)
+    # sut = "AgenticTRACE"
+    sut = "TRACE"
 
     with open("simulation/testset.json", "r") as f:
         test_urls = json.load(f)
@@ -501,3 +589,5 @@ if __name__ == "__main__":
             logger.info(f"[FRAMEWORK] Simulate commit: {url_info['commit_url']}")
             rq3_origin(url_info["commit_url"], sut, language)
             simulated_urls += 1
+            # break
+        break
