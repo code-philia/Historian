@@ -94,7 +94,7 @@ def ask_invoker(prior_edits, language, MODELS, logger):
     if prior_edit_type == "normal":
         service = "normal"
         logger.info(f"[SUT] Last prior edit composition type prediction:")
-        logger.info(f"[SUT] Heuristic   logic : {service}")
+        logger.info(f"[SUT] Heuristic logic : {service}")
         return service, service_info
     
     prior_edit_hunk_set = prior_edits[-min(3, len(prior_edits)):] 
@@ -166,8 +166,8 @@ def ask_invoker(prior_edits, language, MODELS, logger):
             service_confidence = None
 
     logger.info("[SUT] Last prior edit composition type prediction:")
-    logger.info(f"[SUT] Heuristic   logic : {prior_edit_type}")
-    logger.info(f"[SUT] TRACE    Invoker  : {service}")
+    logger.info(f"[SUT] Heuristic logic : {prior_edit_type}")
+    logger.info(f"[SUT] TRACE   Invoker : {service}")
     if service_confidence != None:
         logger.info(f"[SUT] Invoker confidence: {service_confidence:.4f}")
         

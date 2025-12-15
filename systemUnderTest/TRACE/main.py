@@ -80,7 +80,7 @@ def setup(json_input: dict):
     # TODO: migrate these previous code
     LSP.open_in_batch(changed_files)
     # Obtain the initial diagnose messages that should be ignored
-    init_diagnose = LSP.acquire_diagnose(changed_files, repo_dir, {})
+    init_diagnose = LSP.acquire_diagnose(changed_files, {})
     
     # Setup neural models
     if MODELS["INVOKER"] is None:

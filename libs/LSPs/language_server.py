@@ -46,6 +46,11 @@ class LanguageServer(ABC):
         Initialize the language server process.
         """
         self.language_id = language_id
+        self.request_id: int = 1
+        self.log: bool = log
+        self.logger = logger
+        self.workspace_file_version: Dict[str, int] = {}
+        self.workspace_dir: Optional[str] = None
         try:
             self.process = subprocess.Popen(
                 server_command,
@@ -56,27 +61,20 @@ class LanguageServer(ABC):
                 bufsize=0
             )
         except Exception as e:
-            print(f"Failed to start language server process: {e}")
-            raise
-        self.request_id: int = 1
-        self.log: bool = log
-        self.logger = logger
-        self.workspace_file_version: Dict[str, int] = {}
-        self.workspace_folders: Optional[List[str]] = None
+            logger.error(f"[LSP] Failed to start language server process: {e}")
+            raise Exception
 
-    def initialize(self, workspace_folders: list[str] | str, wait_time: float = 0.5):
-        if isinstance(workspace_folders, str):
-            workspace_folders = [workspace_folders]
-        self.workspace_folders = workspace_folders
+    def initialize(self, workspace_dir: str, wait_time: float = 0.5):
+        self.workspace_dir = workspace_dir
         request_id = self._send_request(
             "initialize",
             params={
                 "processId": None,
                 "workspaceFolders": [
                     {
-                        "uri": f"file://{workspace_folder}",
-                        "name": f"Workspace {i}"
-                    } for i, workspace_folder in enumerate(workspace_folders)
+                        "uri": f"file://{self.workspace_dir}",
+                        "name": "Workspace 0"
+                    }
                 ],
                 "capabilities": self._get_capabilities()
             }
@@ -89,12 +87,7 @@ class LanguageServer(ABC):
         """
         Return a string representation showing the language server and workspace.
         """
-        workspace_info = "not initialized"
-        if self.workspace_folders:
-            if len(self.workspace_folders) == 1:
-                workspace_info = self.workspace_folders[0]
-            else:
-                workspace_info = f"{len(self.workspace_folders)} workspaces: {', '.join(self.workspace_folders)}"
+        workspace_info = "not initialized" if self.workspace_dir is None else self.workspace_dir
 
         return f"LanguageServer(language={self.language_id}, workspace={workspace_info})"
 
@@ -167,10 +160,7 @@ class LanguageServer(ABC):
     
     def open_in_batch(self, file_paths: List[str]):
         for file_path in file_paths:
-            try:
-                self.did_open(file_path)
-            except Exception as e:
-                continue
+            self.did_open(os.path.join(self.workspace_dir, file_path))
             
     def rename(self, file_path: str, position: dict[str, int], new_name: str, wait_time: float = 0.5):
         if self.workspace_file_version.get(file_path, 0) == 0:
@@ -420,11 +410,6 @@ class LanguageServer(ABC):
                 # Only enforce version check if both LSP and client provide version info
                 if msg_version is not None and client_version is not None:
                     if msg_version != client_version:
-                        if self.logger:
-                            self.logger.warning(
-                                f"[LSP] Ignoring diagnostics for {expected_file_path}: "
-                                f"version mismatch (LSP={msg_version}, Client={client_version})"
-                            )
                         return False
 
             return True
@@ -525,10 +510,10 @@ class LanguageServer(ABC):
         """
         pass
     
-    def acquire_diagnose(self, files_to_diagnose, repo_dir, last_edit_region):
+    def acquire_diagnose(self, files_to_diagnose, last_edit_region):
         diagnostics = []
         for file_path in files_to_diagnose:
-            abs_file_path = os.path.join(repo_dir, file_path)
+            abs_file_path = os.path.join(self.workspace_dir, file_path)
 
             # Skip files that don't match this LSP's language
             if not self._should_process_file(file_path):

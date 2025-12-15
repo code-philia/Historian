@@ -231,7 +231,7 @@ def process_diagnose(json_input, LSP, MODELS, logger):
         "lines": list(range(last_edit["currently_start_at_line"], last_edit["currently_start_at_line"] + len(last_edit["after"])))
     }
 
-    diagnose_locations = LSP.acquire_diagnose(changed_files, repo_dir, last_edit_region)
+    diagnose_locations = LSP.acquire_diagnose(changed_files, last_edit_region)
     return LSP_location_to_predicted_snapshots("diagnose", diagnose_locations, json_input, MODELS, logger)
  
 def LSP_location_to_predicted_snapshots(LSP_name, identified_locations, json_input, MODELS, logger):
