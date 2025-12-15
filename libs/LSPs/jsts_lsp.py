@@ -5,9 +5,9 @@ from typing import Dict
 from .language_server import LanguageServer
 
 class TsLanguageServer(LanguageServer):
-    def __init__(self, language_id: str, log: bool = False):
+    def __init__(self, language_id: str, log: bool = False, logger=None):
         server_command = ["typescript-language-server", "--stdio"]
-        super().__init__(language_id, server_command, log)
+        super().__init__(language_id, server_command, log, logger=logger)
     
     def initialize(self, workspace_folders: list[str] | str, wait_time: float = 0.5):
         # NOTE: TsLanguageServer initialization does not response any message
@@ -50,10 +50,40 @@ class TsLanguageServer(LanguageServer):
             self.did_open(file_path)
         else:
             self.did_change(file_path)
-        
+
+        # TypeScript Language Server sends diagnostics for ALL opened files
+        # We collect all of them, but filter for the specific file we care about
         expected_response_num = len(self.workspace_file_version)
-        messages = self._get_messages(expect_method="textDocument/publishDiagnostics", message_num=expected_response_num, wait_time=wait_time)
-        return messages
+        all_messages = self._get_messages(
+            expect_method="textDocument/publishDiagnostics",
+            message_num=expected_response_num,
+            wait_time=wait_time,
+            return_all=True  # Get all messages first
+        )
+
+        # Filter for the specific file we requested, matching URI and version
+        expected_uri = f"file://{file_path}"
+        client_version = self.workspace_file_version.get(file_path, None)
+
+        filtered_messages = []
+        for msg in all_messages:
+            if msg.get("method") == "textDocument/publishDiagnostics":
+                params = msg.get("params", {})
+                msg_uri = params.get("uri", "")
+                msg_version = params.get("version", None)
+
+                # Match URI
+                if msg_uri == expected_uri:
+                    # Check version if both are available
+                    if client_version is not None and msg_version is not None:
+                        if msg_version == client_version:
+                            filtered_messages.append(msg)
+                        # else: skip this message, version mismatch
+                    else:
+                        # If version info is not available, just match by URI
+                        filtered_messages.append(msg)
+
+        return filtered_messages if filtered_messages else all_messages
 
     def _parse_rename_response(self, response, edits, old_name, new_name):
         """
@@ -109,23 +139,28 @@ if __name__ == "__main__":
     server = TsLanguageServer("javascript", log=False)
     
     print(f">>>>>>>> Check initialize:")
-    server.initialize(workspace)
+    result = server.initialize(workspace)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     # Get the list of all file paths in the workspace
     file_paths = server.get_all_file_paths(workspace)
     server.open_in_batch(file_paths)
     
     print(f">>>>>>>> Check rename:")
-    server.rename(file_path, {"line": 7, "character": 20}, "UserName")
+    result = server.rename(file_path, {"line": 7, "character": 20}, "UserName")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check references:")
-    server.references(file_path, {"line": 8, "character": 8})
+    result = server.references(file_path, {"line": 8, "character": 8})
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check diagnostics:")
-    server.diagnostics(file_path, wait_time=2)
+    result = server.diagnostics(file_path, wait_time=2)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check close:")
-    server.close()
+    result = server.close()
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     """
     Test Js Language Server on ts_project
@@ -137,20 +172,25 @@ if __name__ == "__main__":
     server = TsLanguageServer("typescript", log=False)
     
     print(f">>>>>>>> Check initialize:")
-    server.initialize(workspace)
+    result = server.initialize(workspace)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     # Get the list of all file paths in the workspace
     file_paths = server.get_all_file_paths(workspace)
     server.open_in_batch(file_paths)
     
     print(f">>>>>>>> Check rename:")
-    server.rename(file_path, {"line": 12, "character": 17}, "ReversedString")
+    result = server.rename(file_path, {"line": 12, "character": 17}, "ReversedString")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
-    # print(f">>>>>>>> Check references:")
-    # server.references(file_path, {"line": 12, "character": 24})
+    print(f">>>>>>>> Check references:")
+    result = server.references(file_path, {"line": 12, "character": 24})
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
-    # print(f">>>>>>>> Check diagnostics:")
-    # server.diagnostics(file_path, wait_time=2)
+    print(f">>>>>>>> Check diagnostics:")
+    result = server.diagnostics(file_path, wait_time=2)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check close:")
-    server.close()
+    result = server.close()
+    print(json.dumps(result, indent=2, ensure_ascii=False))

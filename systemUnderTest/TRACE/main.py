@@ -51,16 +51,16 @@ def setup(json_input: dict):
     # Setup LSP server
     if language == "python":
         from libs.LSPs.py_lsp import PyLanguageServer
-        LSP = PyLanguageServer()
+        LSP = PyLanguageServer(logger=logger)
     elif language == "java":
         from libs.LSPs.java_lsp import JavaLanguageServer
-        LSP = JavaLanguageServer()
+        LSP = JavaLanguageServer(logger=logger)
     elif language == "go":
         from libs.LSPs.go_lsp import GoLanguageServer
-        LSP = GoLanguageServer()
+        LSP = GoLanguageServer(logger=logger)
     elif language in ["javascript", "typescript"]:
         from libs.LSPs.jsts_lsp import TsLanguageServer
-        LSP = TsLanguageServer(language)
+        LSP = TsLanguageServer(language, logger=logger)
     
     # Initialize LSP with the repository directory
     max_retries = 3

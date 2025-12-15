@@ -1,9 +1,10 @@
 import os
+import json
 import subprocess
 from .language_server import LanguageServer
 
 class GoLanguageServer(LanguageServer):
-    def __init__(self, log: bool = False):
+    def __init__(self, log: bool = False, logger=None):
         language_id = "go"
         server_command = ["gopls", "serve"]
         env = os.environ.copy()
@@ -11,7 +12,7 @@ class GoLanguageServer(LanguageServer):
         env["GOPATH"] = env.get("GOPATH", os.path.expanduser("~/go"))  # Stick to default GOPATH
         env["GOFLAGS"] = "-mod=mod"  # let gopls analyze local files
 
-        super().__init__(language_id, server_command, log)
+        super().__init__(language_id, server_command, log, logger=logger)
     
     def initialize(self, workspace_folders: list[str] | str, wait_time: float = 0.5):
         if isinstance(workspace_folders, str):
@@ -31,8 +32,9 @@ class GoLanguageServer(LanguageServer):
                 "capabilities": self._get_capabilities()
             }
         )
-        self._get_messages(request_id=request_id, message_num=1, wait_time=wait_time)
+        init_message = self._get_messages(request_id=request_id, message_num=1, wait_time=wait_time)
         self._send_notification("initialized")
+        return init_message
         
     def _parse_rename_response(self, response, edits, old_name, new_name):
         """
@@ -110,13 +112,23 @@ if __name__ == "__main__":
     current_path = os.path.dirname(os.path.abspath(__file__))
     workspace = os.path.join(current_path, "projects/go_project")
     file_path = os.path.join(workspace, "main.go")
+    
     print(f">>>>>>>> Check initialize:")
-    server.initialize([workspace])
+    response = server.initialize([workspace])
+    print(json.dumps(response, indent=2, ensure_ascii=False))
+    
     print(f">>>>>>>> Check rename:")
-    server.rename(file_path, {"line": 10, "character": 2}, "sum_func")
-    # print(f">>>>>>>> Check references:")
-    # server.references(file_path, {"line": 10, "character": 15})
-    # print(f">>>>>>>> Check diagnostics:")
-    # server.diagnostics(file_path)
+    response = server.rename(file_path, {"line": 10, "character": 2}, "sum_func")
+    print(json.dumps(response, indent=2, ensure_ascii=False))
+    
+    print(f">>>>>>>> Check references:")
+    response = server.references(file_path, {"line": 10, "character": 15})
+    print(json.dumps(response, indent=2, ensure_ascii=False))
+    
+    print(f">>>>>>>> Check diagnostics:")
+    response = server.diagnostics(file_path)
+    print(json.dumps(response, indent=2, ensure_ascii=False))
+    
     print(f">>>>>>>> Check close:")
-    server.close()
+    response = server.close()
+    print(json.dumps(response, indent=2, ensure_ascii=False))

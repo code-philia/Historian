@@ -5,7 +5,7 @@ import shutil
 from .language_server import LanguageServer
 
 class JavaLanguageServer(LanguageServer):
-    def __init__(self, log: bool = False):
+    def __init__(self, log: bool = False, logger=None):
         language_id = "java"
         current_path = os.path.dirname(os.path.abspath(__file__))
         jdt_lsp_jar = os.path.join(current_path, "jdt-language-server/plugins/org.eclipse.equinox.launcher_1.6.900.v20240613-2009.jar")
@@ -27,7 +27,7 @@ class JavaLanguageServer(LanguageServer):
             "-configuration", jdt_lsp_config,
             "-data", self.temp_data_path
         ]
-        super().__init__(language_id, COMMAND, log)
+        super().__init__(language_id, COMMAND, log, logger=logger)
     
     def initialize(self, workspace_folders: list[str] | str, wait_time: float = 5):
         return super().initialize(workspace_folders, wait_time)
@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
     print(f">>>>>>>> Check initialize:")
     init_result = server.initialize(workspace, wait_time=10)  # Increase wait time for Java LSP
-    print(f"Initialize response: {json.dumps(init_result, indent=2, ensure_ascii=False)}")
+    print(json.dumps(init_result, indent=2, ensure_ascii=False))
 
     # Get the list of all file paths in the workspace
     file_paths = server.get_all_file_paths(workspace)
@@ -133,15 +133,16 @@ if __name__ == "__main__":
 
     print(f"\n>>>>>>>> Check rename:")
     result = server.rename(file_path, {"line": 8, "character": 13}, "sum_func", wait_time=5)
-    print(f"Rename response: {json.dumps(result, indent=2, ensure_ascii=False)}")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
     print(f"\n>>>>>>>> Check references:")
     result = server.references(file_path, {"line": 8, "character": 30}, wait_time=5)
-    print(f"References response: {json.dumps(result, indent=2, ensure_ascii=False)}")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
     print(f"\n>>>>>>>> Check diagnostics:")
     result = server.diagnostics(file_path, wait_time=5)
-    print(f"Diagnostics: {json.dumps(result, indent=2, ensure_ascii=False)}")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
     print(f"\n>>>>>>>> Check close:")
-    server.close()
+    result = server.close()
+    print(json.dumps(result, indent=2, ensure_ascii=False))

@@ -61,7 +61,6 @@ class LanguageServer(ABC):
         self.request_id: int = 1
         self.log: bool = log
         self.logger = logger
-        self.messages: List[Dict] = []
         self.workspace_file_version: Dict[str, int] = {}
         self.workspace_folders: Optional[List[str]] = None
 
@@ -237,18 +236,26 @@ class LanguageServer(ABC):
             self.did_open(file_path)
         else:
             self.did_change(file_path)
-        
-        messages = self._get_messages(expect_method="textDocument/publishDiagnostics", message_num=1, wait_time=wait_time)
+
+        # diagnose request must specify file_path, otherwise may return diagnostics of other files that are previously send by server and left in the message queue
+        messages = self._get_messages(
+            expect_method="textDocument/publishDiagnostics",
+            message_num=1,
+            wait_time=wait_time,
+            expected_file_path=file_path
+        )
         return messages
 
     def close(self):
         request_id = self._send_request("shutdown")
-        self._get_messages(request_id=request_id, message_num=1, wait_time=0.5)
+        close_message = self._get_messages(request_id=request_id, message_num=1, wait_time=0.5)
         self._send_notification("exit")
         self.process.terminate()
         self.process.wait()
         if self.logger is not None:
             self.logger.info("[LSP] Language Server closed.")
+        
+        return close_message
 
     def get_all_file_paths(self, workspace_path: str) -> List[str]:
         file_paths = []
@@ -302,21 +309,33 @@ class LanguageServer(ABC):
             if brace_count == 0:
                 return buffer
         
-    @timeout_decorator(timeout=5, timeout_return=None)
-    def _read_lsp_messages(self, request_id: Optional[int] = None, expect_method: Optional[str] = None, message_num: Optional[int] = None, wait_time: Optional[float] = None):
+    @timeout_decorator(timeout=5, timeout_return=[])
+    def _get_messages(self, request_id: Optional[int] = None, expect_method: Optional[str] = None, message_num: Optional[int] = None, wait_time: Optional[float] = None, return_all: bool = False, expected_file_path: Optional[str] = None) -> List[Dict]:
         """
-        Continuously read and parse JSON-RPC messages from the server's stdout.
-        Messages are stored in the self.messages list.
-        By specifying the `request_id` or `expect_method`, the function will stop when the message is received.
+        Retrieve messages from the server based on specified conditions:
+        - request_id: Stop when a specific request ID is received.
+        - expect_method: Stop when a specific method is received.
+        - message_num: Stop when a specific number of messages are received.
+        - wait_time: Stop after the specified amount of time (in seconds).
         If both parameters are set, the function will stop when either condition is met.
 
         Args:
-            message_num: Number of DESIRED messages to receive (not total messages).
-                        Only counts messages that match request_id or expect_method.
+            request_id (Optional[int]): Request ID of the message to retrieve.
+            expect_method (Optional[str]): Method of the message to retrieve.
+            message_num (Optional[int]): Number of DESIRED messages to retrieve.
+            wait_time (Optional[float]): Time in seconds allowed to wait for messages.
+            return_all (bool): If False (default), only return desired messages.
+                              If True, return all messages including logs.
+            expected_file_path (Optional[str]): For diagnostics, the file path to match.
+
+        Returns:
+            List[Dict]: A list of received JSON-RPC messages.
         """
         buffer = ""
         start_time = time.time()
-        desired_message_count = 0  # Count only messages matching request_id or expect_method
+
+        all_messages = []
+        desired_messages = []
 
         while True:
             line = self.process.stdout.readline()
@@ -329,82 +348,90 @@ class LanguageServer(ABC):
                 message = self._read_by_brace_matching()
                 try:
                     json_message = json.loads(message.strip())
-                    is_desired = self._is_desired_message(json_message, request_id, expect_method)
+
+                    # Log the message if logging is enabled
+                    if self.log:
+                        print(f"[RECEIVED] {json.dumps(json_message, indent=2, ensure_ascii=False)}")
+
+                    # Check if message matches criteria
+                    is_desired = self._matches_criteria(
+                        json_message, request_id, expect_method, expected_file_path
+                    )
+
+                    # Categorize and store messages
+                    all_messages.append(json_message)
                     if is_desired:
-                        desired_message_count += 1
-                        # If we found the desired message and don't need to collect more, return
-                        if message_num is None or desired_message_count >= message_num:
-                            return None
+                        desired_messages.append(json_message)
+
+                        # If we found enough desired messages, return
+                        if message_num is None or len(desired_messages) >= message_num:
+                            return all_messages if return_all else desired_messages
+
                 except json.JSONDecodeError as e:
                     raise Exception(f"JSON Parse Error: {e}, Original Message: {message}")
                 buffer = ""  # Reset buffer after processing a message
 
             if wait_time is not None and (time.time() - start_time) >= wait_time:
-                return None 
+                return all_messages if return_all else desired_messages
+
+        return all_messages if return_all else desired_messages
     
-    def _is_desired_message(self, json_message: Dict, request_id: Optional[int] = None, expect_method: Optional[str] = None) -> bool:
-        # Always log the message if logging is enabled
-        if self.log:
-            print(f"[RECEIVED] {json.dumps(json_message, indent=2, ensure_ascii=False)}")
-
-        # Check if this is the desired message
-        is_desired = False
-        if request_id is not None:
-            # Looking for a specific request response
-            if "id" in json_message and json_message["id"] == request_id:
-                is_desired = True
-        elif expect_method is not None:
-            # Looking for a specific method (notification or request)
-            if "method" in json_message and json_message["method"] == expect_method:
-                is_desired = True
-        else:
-            # Accept all messages
-            is_desired = True
-
-        # IMPORTANT: Always append the message, even if it's not the desired one
-        # This prevents message loss when waiting for specific responses
-        self.messages.append(json_message)
-
-        return is_desired
-        
-    def _get_messages(self, request_id: Optional[int] = None, expect_method: Optional[str] = None, message_num: Optional[int] = None, wait_time: Optional[float] = None, return_all: bool = False) -> List[Dict]:
+    def _matches_criteria(self, json_message: Dict, request_id: Optional[int] = None,
+                          expect_method: Optional[str] = None,
+                          expected_file_path: Optional[str] = None) -> bool:
         """
-        Retrieve messages from the server based on specified conditions:
-        - request_id: Stop when a specific request ID is received.
-        - expect_method: Stop when a specific method is received.
-        - message_num: Stop when a specific number of messages are received.
-        - wait_time: Stop after the specified amount of time (in seconds).
-        If both parameters are set, the function will stop when either condition is met.
+        Pure function to check if a message matches the specified criteria.
+        No side effects - only returns True/False.
 
         Args:
-            request_id (Optional[int]): Request ID of the message to retrieve.
-            expect_method (Optional[str]): Method of the message to retrieve.
-            message_num (Optional[int]): Number of messages to retrieve.
-            wait_time (Optional[float]): Time in seconds allowed to wait for messages.
-            return_all (bool): If False (default), only return desired messages.
-                              If True, return all messages including logs.
+            json_message: The JSON-RPC message to check
+            request_id: Check if message has this request ID
+            expect_method: Check if message has this method name
+            expected_file_path: For diagnostics, the file path to match against URI and version
 
         Returns:
-            List[Dict]: A list of received JSON-RPC messages.
+            bool: True if message matches criteria, False otherwise
         """
-        self._read_lsp_messages(request_id=request_id, expect_method=expect_method, message_num=message_num,
-        wait_time=wait_time)  # Read all current messages
+        # Check request_id match
+        if request_id is not None:
+            if "id" in json_message and json_message["id"] == request_id:
+                return True
+            return False
 
-        all_messages = self.messages
-        self.messages = []  # Clear message list
+        # Check expect_method match
+        if expect_method is not None:
+            if "method" not in json_message or json_message["method"] != expect_method:
+                return False
 
-        # Filter to return only desired messages if requested
-        if not return_all and (request_id is not None or expect_method is not None):
-            if request_id is not None:
-                # Return only messages with matching request_id
-                desired_messages = [msg for msg in all_messages if msg.get("id") == request_id]
-            else:  # expect_method is not None
-                # Return only messages with matching method
-                desired_messages = [msg for msg in all_messages if msg.get("method") == expect_method]
-            return desired_messages
+            # Special handling for publishDiagnostics: check URI and version
+            if expect_method == "textDocument/publishDiagnostics" and expected_file_path is not None:
+                params = json_message.get("params", {})
 
-        return all_messages
-    
+                # Check URI matches the expected file
+                expected_uri = f"file://{expected_file_path}"
+                msg_uri = params.get("uri", "")
+                if msg_uri != expected_uri:
+                    return False
+
+                # Check version matches client version
+                msg_version = params.get("version", None)
+                client_version = self.workspace_file_version.get(expected_file_path, None)
+
+                # Only enforce version check if both LSP and client provide version info
+                if msg_version is not None and client_version is not None:
+                    if msg_version != client_version:
+                        if self.logger:
+                            self.logger.warning(
+                                f"[LSP] Ignoring diagnostics for {expected_file_path}: "
+                                f"version mismatch (LSP={msg_version}, Client={client_version})"
+                            )
+                        return False
+
+            return True
+
+        # Accept all messages when no criteria specified
+        return True
+
     def _send_to_process(self, message: str):
         # Check if process is still running
         if self.process.poll() is not None:
@@ -416,11 +443,9 @@ class LanguageServer(ABC):
             )
 
         try:
-            if os.name == "nt": # Windows
-                # TODO: Just a speculation, not verified.
-                self.process.stdin.write(f"Content-Length: {len(message)}\n\n{message}")
-            elif os.name == "posix": # Linux, macOS
-                self.process.stdin.write(f"Content-Length: {len(message)}\r\n\r\n{message}")
+            # LSP protocol requires CRLF (\r\n) line endings on all platforms
+            # Reference: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
+            self.process.stdin.write(f"Content-Length: {len(message)}\r\n\r\n{message}")
             self.process.stdin.flush()
         except BrokenPipeError as e:
             # If we get a broken pipe, the process likely crashed
@@ -429,7 +454,36 @@ class LanguageServer(ABC):
                 f"Failed to send message to language server (BrokenPipeError). "
                 f"Process exit code: {self.process.poll()}, stderr: {stderr_output}"
             ) from e
-        
+    
+    def _should_process_file(self, file_path: str) -> bool:
+        """
+        Check if this LSP server should process the given file.
+        Default implementation checks common file extensions.
+        Subclasses can override for more sophisticated checks.
+
+        Args:
+            file_path: Path to the file to check
+
+        Returns:
+            bool: True if this LSP should process the file
+        """
+        # Default extension mappings
+        extension_map = {
+            'python': ['.py', '.pyi'],
+            'javascript': ['.js', '.jsx', '.mjs', '.cjs'],
+            'typescript': ['.ts', '.tsx'],
+            'java': ['.java'],
+            'go': ['.go'],
+        }
+
+        language_extensions = extension_map.get(self.language_id, [])
+        if not language_extensions:
+            # If language not in map, accept all files (conservative)
+            return True
+
+        # Check if file has a supported extension
+        return any(file_path.endswith(ext) for ext in language_extensions)
+   
     def _create_message(self, method: str, params: dict = None, is_request: bool = True) -> str:
         message_data = {
             "jsonrpc": "2.0",
@@ -475,11 +529,24 @@ class LanguageServer(ABC):
         diagnostics = []
         for file_path in files_to_diagnose:
             abs_file_path = os.path.join(repo_dir, file_path)
+
+            # Skip files that don't match this LSP's language
+            if not self._should_process_file(file_path):
+                if self.logger:
+                    self.logger.debug(f"[LSP] Skipping {file_path} - not supported by {self.language_id} LSP")
+                continue
+
             try:
                 response = self.diagnostics(abs_file_path, wait_time=2.0)
-            except:
-                self.logger.error(f"[LSP] Encountered error when acquiring diagnostics for {file_path}")
-                time.sleep(5)
+            except TimeoutError as e:
+                # Timeout is not necessarily an error - file might be valid but LSP is slow
+                if self.logger:
+                    self.logger.warning(f"[LSP] Timeout acquiring diagnostics for {file_path}: {e}")
+                continue
+            except Exception as e:
+                # Log and skip this file, but continue with others
+                if self.logger:
+                    self.logger.error(f"[LSP] Error acquiring diagnostics for {file_path}: {e}")
                 continue
             
             if response == []:

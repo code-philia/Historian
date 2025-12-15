@@ -1,13 +1,14 @@
 import os
+import json
 import time
 from .language_server import LanguageServer
 
 class PyLanguageServer(LanguageServer):
-    def __init__(self, log: bool = False):
+    def __init__(self, log: bool = False, logger=None):
         language_id = "python"
         server_command = ['pyright-langserver', '--stdio']
         
-        super().__init__(language_id, server_command, log)
+        super().__init__(language_id, server_command, log, logger=logger)
         
     def _parse_rename_response(self, response, edits, old_name, new_name):
         """
@@ -72,15 +73,21 @@ if __name__ == "__main__":
     server = PyLanguageServer(log=True)
     
     print(f">>>>>>>> Check initialize:")
-    server.initialize(workspace)
+    result = server.initialize(workspace)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check rename:")
-    server.rename(file_path, {"line": 7, "character": 27}, "add")
+    result = server.rename(file_path, {"line": 7, "character": 27}, "add")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check references:")
-    server.references(file_path, {"line": 4, "character": 12})
+    result = server.references(file_path, {"line": 4, "character": 12})
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
-    # print(f">>>>>>>> Check diagnostics:")
-    # server.diagnostics(file_path, wait_time=2)
+    print(f">>>>>>>> Check diagnostics:")
+    result = server.diagnostics(file_path, wait_time=2)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
-    server.close()
+    print(f">>>>>>>> Check close:")
+    result = server.close()
+    print(json.dumps(result, indent=2, ensure_ascii=False))

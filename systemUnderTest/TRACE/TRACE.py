@@ -77,6 +77,7 @@ def process_rename(service_info, json_input, LSP, logger):
         logger (Logger): Logger for logging information.
         
     Returns:
+        predict_snapshots (dict): A dictionary mapping file paths to predicted snapshots after applying rename edits.
     """
     # Step 1: Revert the project to the state before the target rename edit
     target_edit = json_input["prior_edits"][-1]
@@ -107,6 +108,9 @@ def process_rename(service_info, json_input, LSP, logger):
         except:
             logger.error("[LSP] Error in getting rename services.")
             time.sleep(5)
+            # restore the latest version before returning
+            with open(target_edit_abs_file_path, "w") as f:
+                f.writelines(code_lines)
             return None
         
         if len(response) == 0 or "error" in response[0] or "result" not in response[0] or response[0]["result"] is None: 
