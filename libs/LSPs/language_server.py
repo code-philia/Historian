@@ -2,43 +2,10 @@ import os
 import re
 import json
 import time
-import threading
-import functools
 import subprocess
+import select
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
-
-def timeout_decorator(timeout, timeout_return=None):
-    """
-    Decorator to add a timeout to any function.
-    Returns `timeout_return` when the function exceeds the timeout.
-    """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            result_container = {}
-            exception_container = {}
-
-            def target():
-                try:
-                    result_container['result'] = func(*args, **kwargs)
-                except Exception as e:
-                    exception_container['exception'] = e
-
-            thread = threading.Thread(target=target)
-            thread.daemon = True  # Set the thread as a daemon thread
-            thread.start()
-            thread.join(timeout)
-
-            if thread.is_alive():
-                raise TimeoutError(f"Function '{func.__name__}' exceeded timeout of {timeout} seconds.")
-
-            if 'exception' in exception_container:
-                raise exception_container['exception']
-
-            return result_container.get('result')
-        return wrapper
-    return decorator
 
 class LanguageServer(ABC):
     def __init__(self, language_id: str, server_command: List[str], log: bool = False, logger = None):
@@ -57,8 +24,7 @@ class LanguageServer(ABC):
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                bufsize=0
+                bufsize=0  # Binary mode (text=False is default)
             )
         except Exception as e:
             logger.error(f"[LSP] Failed to start language server process: {e}")
@@ -254,52 +220,6 @@ class LanguageServer(ABC):
                 file_paths.append(os.path.join(root, file))
         return file_paths
 
-    def _read_by_brace_matching(self, timeout: float = 0.1) -> Optional[str]:
-        """
-        Read a complete JSON message by matching the braces.
-
-        Args:
-            timeout: Timeout for select (seconds)
-
-        Returns:
-            Optional[str]: Return a complete JSON message string, or None if timeout
-        """
-        buffer = ""
-        brace_count = 0
-        inside_str = False
-        escaped = False  # 处理转义字符
-
-        while True:
-            char = self.process.stdout.read(1)
-
-            # Handle EOF or empty read
-            if not char:
-                raise RuntimeError("Unexpected EOF while reading JSON message from language server")
-
-            if buffer == "":
-                if char != "{":
-                    raise RuntimeError(f"Expected '{{' at start of JSON message, got '{char}'")
-
-            buffer += char
-
-            if escaped:
-                escaped = False
-                continue
-
-            if char == '\\':
-                escaped = True
-            elif char == '"':
-                inside_str = not inside_str
-            elif not inside_str:
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-
-            if brace_count == 0:
-                return buffer
-        
-    @timeout_decorator(timeout=5, timeout_return=[])
     def _get_messages(self, request_id: Optional[int] = None, expect_method: Optional[str] = None, message_num: Optional[int] = None, wait_time: Optional[float] = None, return_all: bool = False, expected_file_path: Optional[str] = None) -> List[Dict]:
         """
         Retrieve messages from the server based on specified conditions:
@@ -321,50 +241,62 @@ class LanguageServer(ABC):
         Returns:
             List[Dict]: A list of received JSON-RPC messages.
         """
-        buffer = ""
         start_time = time.time()
-
         all_messages = []
         desired_messages = []
 
+        # Default timeout for individual message reads
+        default_message_timeout = 5.0
+
         while True:
-            line = self.process.stdout.readline()
-            if not line:  # Exit if no more output is available
-                break
-            buffer += line
-            match = re.search(r"Content-Length: (\d+)", buffer)
-            if match:
-                self.process.stdout.readline()  # Skip the blank line
-                message = self._read_by_brace_matching()
-                try:
-                    json_message = json.loads(message.strip())
+            # Calculate remaining time
+            if wait_time is not None:
+                elapsed = time.time() - start_time
+                remaining_time = wait_time - elapsed
 
-                    # Log the message if logging is enabled
-                    if self.log:
-                        print(f"[RECEIVED] {json.dumps(json_message, indent=2, ensure_ascii=False)}")
+                if remaining_time <= 0:
+                    # Time's up, return what we have
+                    return all_messages if return_all else desired_messages
 
-                    # Check if message matches criteria
-                    is_desired = self._matches_criteria(
-                        json_message, request_id, expect_method, expected_file_path
-                    )
+                # Use the smaller of remaining time or default timeout
+                read_timeout = min(remaining_time, default_message_timeout)
+            else:
+                read_timeout = default_message_timeout
 
-                    # Categorize and store messages
-                    all_messages.append(json_message)
-                    if is_desired:
-                        desired_messages.append(json_message)
+            # Try to read a message
+            try:
+                json_message = self._read_single_message(timeout=read_timeout)
 
-                        # If we found enough desired messages, return
-                        if message_num is None or len(desired_messages) >= message_num:
-                            return all_messages if return_all else desired_messages
+                # Log the message if logging is enabled
+                if self.log:
+                    print(f"[RECEIVED] {json.dumps(json_message, indent=2, ensure_ascii=False)}")
 
-                except json.JSONDecodeError as e:
-                    raise Exception(f"JSON Parse Error: {e}, Original Message: {message}")
-                buffer = ""  # Reset buffer after processing a message
+                # Check if message matches criteria
+                is_desired = self._matches_criteria(
+                    json_message, request_id, expect_method, expected_file_path
+                )
 
-            if wait_time is not None and (time.time() - start_time) >= wait_time:
+                # Categorize and store messages
+                all_messages.append(json_message)
+                if is_desired:
+                    desired_messages.append(json_message)
+
+                    # If we found enough desired messages, return immediately
+                    if message_num is None or len(desired_messages) >= message_num:
+                        return all_messages if return_all else desired_messages
+
+            except TimeoutError:
+                # Timeout while reading a message
+                # If we have wait_time set, this is expected behavior
+                # Return what we collected so far
                 return all_messages if return_all else desired_messages
 
-        return all_messages if return_all else desired_messages
+            except (RuntimeError, json.JSONDecodeError) as e:
+                # Fatal error - LSP server sent malformed data or crashed
+                if self.logger:
+                    self.logger.error(f"[LSP] Error reading message: {e}")
+                # Return what we have collected so far
+                return all_messages if return_all else desired_messages
     
     def _matches_criteria(self, json_message: Dict, request_id: Optional[int] = None,
                           expect_method: Optional[str] = None,
@@ -417,24 +349,252 @@ class LanguageServer(ABC):
         # Accept all messages when no criteria specified
         return True
 
+    def _read_exact_bytes(self, num_bytes: int, timeout: float = 5.0) -> bytes:
+        """
+        Read exactly num_bytes from stdout with timeout.
+
+        Args:
+            num_bytes: Exact number of bytes to read
+            timeout: Timeout in seconds
+
+        Returns:
+            bytes: Exactly num_bytes of data
+
+        Raises:
+            TimeoutError: If timeout is exceeded
+            RuntimeError: If EOF is reached before reading num_bytes
+        """
+        buffer = b''
+        deadline = time.time() + timeout
+
+        while len(buffer) < num_bytes:
+            remaining_time = deadline - time.time()
+            if remaining_time <= 0:
+                raise TimeoutError(
+                    f"Timeout while reading {num_bytes} bytes. "
+                    f"Only got {len(buffer)} bytes after {timeout}s"
+                )
+
+            # Use select to wait for data with timeout
+            ready, _, _ = select.select([self.process.stdout], [], [], remaining_time)
+
+            if not ready:
+                raise TimeoutError(
+                    f"Timeout while reading {num_bytes} bytes. "
+                    f"Only got {len(buffer)} bytes after {timeout}s"
+                )
+
+            # Read remaining bytes
+            remaining = num_bytes - len(buffer)
+            chunk = self.process.stdout.read(remaining)
+
+            if not chunk:
+                raise RuntimeError(
+                    f"Unexpected EOF while reading {num_bytes} bytes. "
+                    f"Only got {len(buffer)} bytes"
+                )
+
+            buffer += chunk
+
+        return buffer
+
+    def _read_line(self, timeout: float = 5.0) -> bytes:
+        """
+        Read a line from stdout with timeout.
+        Returns the line including the newline character(s) as bytes.
+
+        Args:
+            timeout: Timeout in seconds
+
+        Returns:
+            bytes: A line of bytes including newline
+
+        Raises:
+            TimeoutError: If timeout is exceeded
+            RuntimeError: If EOF is reached
+        """
+        buffer = b''
+        deadline = time.time() + timeout
+
+        while True:
+            remaining_time = deadline - time.time()
+            if remaining_time <= 0:
+                raise TimeoutError(
+                    f"Timeout while reading line after {timeout}s. "
+                    f"Partial content: {buffer[:100]}"
+                )
+
+            # Use select to wait for data
+            ready, _, _ = select.select([self.process.stdout], [], [], remaining_time)
+
+            if not ready:
+                raise TimeoutError(
+                    f"Timeout while reading line after {timeout}s. "
+                    f"Partial content: {buffer[:100]}"
+                )
+
+            char = self.process.stdout.read(1)
+
+            if not char:
+                if buffer:
+                    # Got EOF with partial line
+                    raise RuntimeError(
+                        f"Unexpected EOF while reading line. "
+                        f"Partial content: {buffer}"
+                    )
+                else:
+                    # Got EOF at start
+                    raise RuntimeError("Unexpected EOF from language server")
+
+            buffer += char
+
+            # Check for line ending (handle both \n and \r\n)
+            if buffer.endswith(b'\n'):
+                return buffer
+
+    def _read_single_message(self, timeout: float = 5.0) -> Dict:
+        """
+        Read a single complete LSP message with proper timeout handling.
+
+        This method ensures:
+        1. Headers are read line by line until blank line
+        2. Content-Length is parsed from headers
+        3. Exactly Content-Length bytes are read (no more, no less)
+        4. Message is decoded as UTF-8 and parsed as JSON
+
+        Args:
+            timeout: Total timeout for reading the entire message
+
+        Returns:
+            Dict: Parsed JSON-RPC message
+
+        Raises:
+            TimeoutError: If reading exceeds timeout
+            RuntimeError: If LSP server sends malformed message
+            json.JSONDecodeError: If message body is not valid JSON
+        """
+        start_time = time.time()
+
+        # Step 1: Read headers until we hit a blank line
+        headers = {}
+        while True:
+            remaining_time = timeout - (time.time() - start_time)
+            if remaining_time <= 0:
+                raise TimeoutError(f"Timeout reading message headers after {timeout}s")
+
+            line = self._read_line(timeout=remaining_time)
+
+            # Blank line indicates end of headers
+            if line == b'\r\n' or line == b'\n':
+                break
+
+            # Parse header (format: "Key: Value\r\n")
+            # Decode to string for parsing
+            line_str = line.rstrip(b'\r\n').decode('utf-8')
+            if ':' in line_str:
+                key, value = line_str.split(':', 1)
+                headers[key.strip()] = value.strip()
+
+        # Step 2: Extract Content-Length
+        if 'Content-Length' not in headers:
+            raise RuntimeError(
+                f"LSP message missing Content-Length header. Got headers: {headers}"
+            )
+
+        try:
+            content_length = int(headers['Content-Length'])
+        except ValueError as e:
+            raise RuntimeError(
+                f"Invalid Content-Length value: {headers['Content-Length']}"
+            ) from e
+
+        if content_length < 0:
+            raise RuntimeError(f"Negative Content-Length: {content_length}")
+
+        if content_length > 100 * 1024 * 1024:  # 100MB sanity check
+            raise RuntimeError(
+                f"Content-Length too large: {content_length} bytes. "
+                f"Possible protocol error."
+            )
+
+        # Step 3: Read exactly content_length bytes
+        remaining_time = timeout - (time.time() - start_time)
+        if remaining_time <= 0:
+            raise TimeoutError(f"Timeout before reading message body after {timeout}s")
+
+        message_bytes = self._read_exact_bytes(content_length, timeout=remaining_time)
+
+        # Verify we got exactly the right amount
+        if len(message_bytes) != content_length:
+            raise RuntimeError(
+                f"Expected {content_length} bytes but got {len(message_bytes)} bytes"
+            )
+
+        # Step 4: Decode and parse JSON
+        try:
+            message_str = message_bytes.decode('utf-8')
+        except UnicodeDecodeError as e:
+            raise RuntimeError(
+                f"Failed to decode message as UTF-8. "
+                f"First 100 bytes: {message_bytes[:100]}"
+            ) from e
+
+        try:
+            json_message = json.loads(message_str)
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(
+                f"Failed to parse LSP message as JSON: {e.msg}. "
+                f"Message preview: {message_str[:200]}",
+                e.doc,
+                e.pos
+            )
+
+        return json_message
+
     def _send_to_process(self, message: str):
+        """
+        Send a message to the LSP server process.
+
+        IMPORTANT: Content-Length MUST be the byte count, not character count!
+        This is critical for messages containing non-ASCII characters.
+
+        Args:
+            message: JSON-RPC message as a string
+
+        Raises:
+            RuntimeError: If process has exited or pipe is broken
+        """
         # Check if process is still running
         if self.process.poll() is not None:
             # Process has exited, read stderr to get error information
-            stderr_output = self.process.stderr.read()
+            stderr_bytes = self.process.stderr.read()
+            stderr_output = stderr_bytes.decode('utf-8', errors='replace') if stderr_bytes else ''
             raise RuntimeError(
                 f"Language server process has exited with code {self.process.returncode}. "
                 f"stderr: {stderr_output}"
             )
 
         try:
-            # LSP protocol requires CRLF (\r\n) line endings on all platforms
+            # LSP protocol requires:
+            # 1. Content-Length header with BYTE count (not character count!)
+            # 2. CRLF (\r\n) line endings on all platforms
             # Reference: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
-            self.process.stdin.write(f"Content-Length: {len(message)}\r\n\r\n{message}")
+
+            # Encode message to bytes
+            message_bytes = message.encode('utf-8')
+            byte_length = len(message_bytes)
+
+            # Construct the full LSP message with proper header (as bytes)
+            header = f"Content-Length: {byte_length}\r\n\r\n".encode('utf-8')
+            full_message = header + message_bytes
+
+            self.process.stdin.write(full_message)
             self.process.stdin.flush()
+
         except BrokenPipeError as e:
             # If we get a broken pipe, the process likely crashed
-            stderr_output = self.process.stderr.read()
+            stderr_bytes = self.process.stderr.read()
+            stderr_output = stderr_bytes.decode('utf-8', errors='replace') if stderr_bytes else ''
             raise RuntimeError(
                 f"Failed to send message to language server (BrokenPipeError). "
                 f"Process exit code: {self.process.poll()}, stderr: {stderr_output}"
@@ -532,7 +692,7 @@ class LanguageServer(ABC):
                 # Log and skip this file, but continue with others
                 if self.logger:
                     self.logger.error(f"[LSP] Error acquiring diagnostics for {file_path}: {e}")
-                continue
+                raise e
             
             if response == []:
                 continue

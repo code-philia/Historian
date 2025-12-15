@@ -70,7 +70,7 @@ if __name__ == "__main__":
     workspace = os.path.join(current_path, "projects/python_project")
     file_path = os.path.join(workspace, "src/main.py")
     
-    server = PyLanguageServer(log=True)
+    server = PyLanguageServer(log=False)
     
     print(f">>>>>>>> Check initialize:")
     result = server.initialize(workspace)
