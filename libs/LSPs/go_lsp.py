@@ -13,28 +13,6 @@ class GoLanguageServer(LanguageServer):
         env["GOFLAGS"] = "-mod=mod"  # let gopls analyze local files
 
         super().__init__(language_id, server_command, log, logger=logger)
-    
-    def initialize(self, workspace_folders: list[str] | str, wait_time: float = 0.5):
-        if isinstance(workspace_folders, str):
-            workspace_folders = [workspace_folders]
-        
-        
-        request_id = self._send_request(
-            "initialize",
-            params={
-                "processId": None,
-                "workspaceFolders": [
-                    {
-                        "uri": f"file://{workspace_folder}",
-                        "name": f"Workspace {i}"
-                    } for i, workspace_folder in enumerate(workspace_folders)
-                ],
-                "capabilities": self._get_capabilities()
-            }
-        )
-        init_message = self._get_messages(request_id=request_id, message_num=1, wait_time=wait_time)
-        self._send_notification("initialized")
-        return init_message
         
     def _parse_rename_response(self, response, edits, old_name, new_name):
         """

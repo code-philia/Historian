@@ -29,9 +29,6 @@ class JavaLanguageServer(LanguageServer):
         ]
         super().__init__(language_id, COMMAND, log, logger=logger)
     
-    def initialize(self, workspace_folders: list[str] | str, wait_time: float = 5):
-        return super().initialize(workspace_folders, wait_time)
-    
     def _parse_rename_response(self, response, edits, old_name, new_name):
         """
         Parse the response of rename request and update the edits

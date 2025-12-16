@@ -26,7 +26,7 @@ Traditional evaluation approaches test code generation in isolation. We test whe
 ├────────────────────────────────────────────────────────────────┤
 │ 1. Extract edits from given commit                             │
 │ 2. Build partial order between edits                           │
-│ 3. Initialize SUT (models, LSP servers, etc.)                  │
+│ 3. Initialize SUT: SUT.setup() (models, LSP servers, etc.)     │
 │ 4. Select & apply initial edit → Establish baseline state      │
 └────────────────────────────────────────────────────────────────┘
                             ↓
@@ -46,7 +46,6 @@ Traditional evaluation approaches test code generation in isolation. We test whe
 │  └─────────────────────────────────────────────────────────┘   │
 │                            ↓                                   │
 │            ┌───────────────┴───────────────┐                   │
-│            │                               │                   │
 │      ✅ Match Found              ❌ No Match Found             │
 │            │                               │                   │
 │            ↓                               ↓                   │
@@ -57,7 +56,6 @@ Traditional evaluation approaches test code generation in isolation. We test whe
 │  │         F1-score     │  │   SUT.generate_edit_solution()│   │
 │  │         ...          │  │       → contents              │   │              
 │  └──────────────────────┘  └───────────────────────────────┘   │
-│            │                                │                  │
 │            └────────────┬───────────────────┘                  │
 │                         ↓                                      │
 │  ┌─────────────────────────────────────────────────────────┐   │
@@ -68,7 +66,6 @@ Traditional evaluation approaches test code generation in isolation. We test whe
 │                         ├───────────┐                          │
 │                     No  │           │ Yes → Loop back          │
 └─────────────────────────┴───────────┴──→───────────────────────┘
-                          │ No
                           ↓
 ┌────────────────────────────────────────────────────────────────┐
 │ Phase 3: Reporting                                             │
@@ -203,12 +200,12 @@ pip install -r requirements.txt
     FLOW_ANALYSIS= # whether to enable flow pattern analysis (true/false)
 
     # TRACE specific configurations
-    INVOKER_MODEL_PATH= # path to TRACE invoker model checkpoint
-    LOCATOR_MODEL_PATH= # path to TRACE locator model checkpoint
-    GENERATOR_MODEL_PATH= # path to TRACE generator model checkpoint
+    INVOKER_MODEL_PATH=systemUnderTest/TRACE/models/invoker_model/pytorch_model.bin # path to TRACE invoker model checkpoint
+    LOCATOR_MODEL_PATH=systemUnderTest/TRACE/models/locator_model/pytorch_model.bin # path to TRACE locator model checkpoint
+    GENERATOR_MODEL_PATH=systemUnderTest/TRACE/models/generator_model/pytorch_model.bin # path to TRACE generator model checkpoint
     DEVICE= # device for model inference (e.g., cpu, cuda:0)
 
-    # If you need to evaluate flow patterns:
+    # If you need to evaluate flow patterns (FLOW_ANALYSIS=true):
     OPENAI_API_KEY= # your OpenAI API key
     OPENAI_BASE_URL= # your OpenAI base URL (if any)
     ```

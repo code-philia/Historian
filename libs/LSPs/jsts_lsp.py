@@ -9,10 +9,6 @@ class TsLanguageServer(LanguageServer):
         server_command = ["typescript-language-server", "--stdio"]
         super().__init__(language_id, server_command, log, logger=logger)
     
-    def initialize(self, workspace_folders: list[str] | str, wait_time: float = 0.5):
-        # NOTE: TsLanguageServer initialization does not response any message
-        return super().initialize(workspace_folders, wait_time)
-    
     def _get_capabilities(self) -> Dict:
         """
         Override the default capabilities to support code diagnostics

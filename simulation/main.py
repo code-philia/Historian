@@ -15,6 +15,7 @@ root_path = os.path.abspath(os.path.join(current_path, "../"))
 load_dotenv(dotenv_path=os.path.join(root_path, ".env"))
 REPOS_DIR = os.getenv("REPOS_DIR") # this directory should be the absolute path to the repository directory inside backend host
 OUTPUT_DIR = os.getenv("OUTPUT_DIR")
+SUT = os.getenv("SUT")
 FLOW_ANALYSIS_ENABLED = os.getenv("FLOW_ANALYSIS", "False").lower() in ("true", "1", "t", "y", "yes")
 os.makedirs(REPOS_DIR, exist_ok=True)
 
@@ -577,9 +578,6 @@ def rq3_flow_keeper(url, sut):
 
 if __name__ == "__main__":
     random.seed(42)
-    # sut = "AgenticTRACE"
-    sut = "TRACE"
-
     with open("simulation/testset.json", "r") as f:
         test_urls = json.load(f)
 
@@ -587,7 +585,6 @@ if __name__ == "__main__":
     for language, urls in test_urls.items():
         for url_info in urls:
             logger.info(f"[FRAMEWORK] Simulate commit: {url_info['commit_url']}")
-            rq3_origin(url_info["commit_url"], sut, language)
+            rq3_origin(url_info["commit_url"], SUT, language)
             simulated_urls += 1
-            # break
-        break
+            
