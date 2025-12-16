@@ -31,7 +31,7 @@ def TRACE(json_input, MODELS, LSP, logger):
         predict_snapshots = process_rename(service_info, json_input, LSP, logger)
         end = time.time()
         if predict_snapshots is None or predict_snapshots == {}:
-            logger.info(f"[SUT] LSP rename retrieved 0 locations.")
+            logger.info(f"[SUT:TRACE] LSP rename retrieved 0 locations.")
         else:
             return predict_snapshots
         
@@ -127,7 +127,7 @@ def process_rename(service_info, json_input, LSP, logger):
         for edit in edits_in_file:
             # if the rename location is in the last edit, remove it
             need_filter = False
-            logger.debug(f"[SUT] Edit retrieved by LSP from same file as last prior edit: {edit}, last prior edit location: {target_edit['file_path']}:{target_edit_start_at_line}")
+            logger.debug(f"[SUT:TRACE] Edit retrieved by LSP from same file as last prior edit: {edit}, last prior edit location: {target_edit['file_path']}:{target_edit_start_at_line}")
             if edit["range"]["start"]["line"] in list(range(target_edit_start_at_line, target_edit_start_at_line + len(target_edit["before"]))):
                 need_filter = True
             if not need_filter:
@@ -150,7 +150,7 @@ def process_rename(service_info, json_input, LSP, logger):
             if edit["range"]["start"]["line"] >= target_edit_start_at_line:
                 edit["range"]["start"]["line"] += offset
                 edit["range"]["end"]["line"] += offset
-    logger.debug(f"[SUT] LSP rename retrieved the following locations: \n{json.dumps(edits, indent=2)}")
+    logger.debug(f"[SUT:TRACE] LSP rename retrieved the following locations: \n{json.dumps(edits, indent=2)}")
     
     # Step 5: Restore the latest version after all prior edits applied
     with open(target_edit_abs_file_path, "w") as f:
@@ -210,7 +210,7 @@ def process_def_ref(service_info, json_input, LSP, MODELS, logger):
             continue
         identified_locations.append(location)
         
-    logger.debug(f"[SUT] LSP def&ref retrieved the following locations: \n{json.dumps(identified_locations, indent=2)}")
+    logger.debug(f"[SUT:TRACE] LSP def&ref retrieved the following locations: \n{json.dumps(identified_locations, indent=2)}")
     return LSP_location_to_predicted_snapshots("def&ref", identified_locations, json_input, MODELS, logger)
         
 def process_code_clone(service_info, json_input, MODELS, logger):
@@ -310,7 +310,7 @@ def LSP_location_to_predicted_snapshots(LSP_name, identified_locations, json_inp
     predicted_snapshots = edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edit_description, language, MODELS["GENERATOR"], MODELS["GENERATOR_TOKENIZER"], logger)
     
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT] Edit recommendation snapshots via {LSP_name} + locator + generator are saved to debug/TRACE_{LSP_name}_recommendation_snapshots.json")
+        logger.debug(f"[SUT:TRACE] Edit recommendation snapshots via {LSP_name} + locator + generator are saved to debug/TRACE_{LSP_name}_recommendation_snapshots.json")
         os.makedirs("debug", exist_ok=True)
         with open(f"debug/TRACE_{LSP_name}_recommendation_snapshots.json", "w", encoding="utf-8") as f:
             json.dump(predicted_snapshots, f, indent=2)
@@ -364,7 +364,7 @@ def convert_rename_edits_to_snapshot(content_lines, file_path, edits_in_file, lo
                 try:
                     assert line_content[start_char:end_char] == edit['oldText']
                 except:
-                    logger.error(f"[SUT] Mismatch in expected text for edit at {file_path}:{ln}, character {start_char}~{end_char} expected `{edit['oldText']}`, found `{line_content[start_char:end_char]}`")
+                    logger.error(f"[SUT:TRACE] Mismatch in expected text for edit at {file_path}:{ln}, character {start_char}~{end_char} expected `{edit['oldText']}`, found `{line_content[start_char:end_char]}`")
                     raise AssertionError
                 
                 after_line = after_line[:start_char] + edit['newText'] + after_line[end_char:]

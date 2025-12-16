@@ -93,8 +93,8 @@ def ask_invoker(prior_edits, language, MODELS, logger):
     prior_edit_type, service_info = logic_gate(prior_edits, language)
     if prior_edit_type == "normal":
         service = "normal"
-        logger.info(f"[SUT] Last prior edit composition type prediction:")
-        logger.info(f"[SUT] Heuristic logic : {service}")
+        logger.info(f"[SUT:TRACE] Last prior edit composition type prediction:")
+        logger.info(f"[SUT:TRACE] Heuristic logic : {service}")
         return service, service_info
     
     prior_edit_hunk_set = prior_edits[-min(3, len(prior_edits)):] 
@@ -141,7 +141,7 @@ def ask_invoker(prior_edits, language, MODELS, logger):
     with torch.no_grad():
         logits = invoker(source_ids=source_ids,source_mask=source_masks,labels=None, train=False)
         probability = torch.sigmoid(logits).detach().cpu().numpy()
-        logger.info(f"[SUT] Invoker prediction probability: {probability}")
+        logger.info(f"[SUT:TRACE] Invoker prediction probability: {probability}")
         binary_predictions = (probability >= threshold).astype(int)
     
     for prediction in binary_predictions:
@@ -165,16 +165,16 @@ def ask_invoker(prior_edits, language, MODELS, logger):
             service = "normal"
             service_confidence = None
 
-    logger.info("[SUT] Last prior edit composition type prediction:")
-    logger.info(f"[SUT] Heuristic logic : {prior_edit_type}")
-    logger.info(f"[SUT] TRACE   Invoker : {service}")
+    logger.info("[SUT:TRACE] Last prior edit composition type prediction:")
+    logger.info(f"[SUT:TRACE] Heuristic logic : {prior_edit_type}")
+    logger.info(f"[SUT:TRACE] TRACE   Invoker : {service}")
     if service_confidence != None:
-        logger.info(f"[SUT] Invoker confidence: {service_confidence:.4f}")
+        logger.info(f"[SUT:TRACE] Invoker confidence: {service_confidence:.4f}")
         
     if prior_edit_type != service:
         service = "normal"
         service_info = None
-        logger.info(f"[SUT] Invoker prediction inconsistent with heuristic logic, invoke no service.")
+        logger.info(f"[SUT:TRACE] Invoker prediction inconsistent with heuristic logic, invoke no service.")
     
     return service, service_info
     

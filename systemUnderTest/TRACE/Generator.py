@@ -111,7 +111,7 @@ def formalize_generator_dataset(sliding_windows: list[CodeWindow], prompt: str, 
         source_seqs.append(source_seq)
         
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT] Generator input sequences are saved to debug/TRACE_generator_input_sequences.json")
+        logger.debug(f"[SUT:TRACE] Generator input sequences are saved to debug/TRACE_generator_input_sequences.json")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_generator_input_sequences.json", "w", encoding="utf-8") as f:
             json.dump(source_seqs, f, indent=2)
@@ -150,7 +150,7 @@ def edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edi
     empty_snapshots = create_empty_snapshots(locations, repo_dir)
     
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT] Empty snapshots created for generator inference is saved to debug/TRACE_empty_snapshots.json")
+        logger.debug(f"[SUT:TRACE] Empty snapshots created for generator inference is saved to debug/TRACE_empty_snapshots.json")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_empty_snapshots.json", "w", encoding="utf-8") as f:
             json.dump(empty_snapshots, f, indent=2)

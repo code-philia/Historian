@@ -208,8 +208,8 @@ def main(json_input: dict):
                 traditional_metrics["BLEU-4"] = edit["BLEU-4"]
                 COMMIT.update_edit_status(edit["matchWith"], "simulated", True)
                 next_edit_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(new_edit_idx))
-                logger.info(f"[SUT] Suggestion matches with Edit {edit['matchWith']}, apply to project")
-                logger.info(f"[SUT] BLEU-4 score: {edit['BLEU-4']:.2f}")
+                logger.info(f"[FRAMEWORK] Suggestion matches with Edit {edit['matchWith']}, apply to project")
+                logger.info(f"[FRAMEWORK] BLEU-4 score: {edit['BLEU-4']:.2f}")
                 break
             
         # Otherwise, randomly select one from allowed next edit idxs as the subsequent edit, and request for edit generation
@@ -251,7 +251,7 @@ def main(json_input: dict):
             next_edit_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(new_edit_idx))
             traditional_metrics["BLEU-4"] = calculate_bleu_between_snapshots(target_location_pred_snapshots, next_edit_snapshots)
             COMMIT.update_edit_status(new_edit_idx, "simulated", True)
-            logger.info(f"[SUT] Requested edit generation for Edit {new_edit_idx}, having BLEU-4 score {traditional_metrics['BLEU-4']:.2f}")
+            logger.info(f"[FRAMEWORK] Requested edit generation for Edit {new_edit_idx}, having BLEU-4 score {traditional_metrics['BLEU-4']:.2f}")
         # -----------------------------------------------------------
         
         

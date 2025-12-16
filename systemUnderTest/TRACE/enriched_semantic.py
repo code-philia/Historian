@@ -306,9 +306,9 @@ def construct_edit_hunk(edit: dict, repo_dir: str, lang: str, logger, expect_old
             assert code == edit["after"]
     except:
         if expect_old_code:
-            logger.error(f"[SUT] The edit before content does not match with the file content at {abs_file_path}:{edit_start_line_idx}-{edit_end_line_idx}.\nExpected code:\n{''.join(edit['before'])}\nActual code:\n{''.join(code)}")
+            logger.error(f"[SUT:TRACE] The edit before content does not match with the file content at {abs_file_path}:{edit_start_line_idx}-{edit_end_line_idx}.\nExpected code:\n{''.join(edit['before'])}\nActual code:\n{''.join(code)}")
         else:
-            logger.error(f"[SUT] The edit after content does not match with the file content at {abs_file_path}:{edit_start_line_idx}-{edit_end_line_idx}.\nExpected code:\n{''.join(edit['after'])}\nActual code:\n{''.join(code)}")
+            logger.error(f"[SUT:TRACE] The edit after content does not match with the file content at {abs_file_path}:{edit_start_line_idx}-{edit_end_line_idx}.\nExpected code:\n{''.join(edit['after'])}\nActual code:\n{''.join(code)}")
         raise AssertionError
     code_suf = code_lines[edit_end_line_idx:]
     

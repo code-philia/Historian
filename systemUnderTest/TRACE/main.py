@@ -43,7 +43,7 @@ def setup(json_input: dict):
     global LSP, MODELS, EXIST_DIAGNOSE_MSG
     
     logger = json_input.pop("logger")
-    logger.debug(f"[SUT] Setup json input: \n{json.dumps(json_input, indent=2)}")
+    logger.debug(f"[SUT:TRACE] Setup json input: \n{json.dumps(json_input, indent=2)}")
     language = json_input["language"]
     repo_dir = json_input["repo_dir"]
     changed_files = json_input["changed_files"]
@@ -68,32 +68,31 @@ def setup(json_input: dict):
     for attempt in range(max_retries):
         try:
             LSP.initialize(repo_dir)
-            logger.info(f"[SUT] LSP server ({language}) for project {repo_dir} initialized successfully.")
+            logger.info(f"[SUT:TRACE] LSP server ({language}) for project {repo_dir} initialized successfully.")
             break
         except Exception as e:
-            logger.error(f"[SUT] Failed to start LSP server for {language} on attempt {attempt + 1}: {e}")
-            logger.info(f"[SUT] Retrying to start LSP server in {retry_delay} seconds ...")
+            logger.error(f"[SUT:TRACE] Failed to start LSP server for {language} on attempt {attempt + 1}: {e}")
+            logger.info(f"[SUT:TRACE] Retrying to start LSP server in {retry_delay} seconds ...")
             time.sleep(retry_delay)
             if attempt == max_retries - 1:
                 raise e
-            
-    # TODO: migrate these previous code
+    
     LSP.open_in_batch(changed_files)
     # Obtain the initial diagnose messages that should be ignored
-    init_diagnose = LSP.acquire_diagnose(changed_files, {})
+    LSP.acquire_diagnose(changed_files, {})
     
     # Setup neural models
     if MODELS["INVOKER"] is None:
         MODELS["INVOKER"], MODELS["INVOKER_TOKENIZER"] = load_invoker()
-        logger.info("[SUT] Invoker model loaded successfully.")
+        logger.info("[SUT:TRACE] Invoker model loaded successfully.")
     
     if MODELS["LOCATOR"] is None:
         MODELS["LOCATOR"], MODELS["LOCATOR_TOKENIZER"] = load_locator()
-        logger.info("[SUT] Locator model loaded successfully.")
+        logger.info("[SUT:TRACE] Locator model loaded successfully.")
     
     if MODELS["GENERATOR"] is None:
         MODELS["GENERATOR"], MODELS["GENERATOR_TOKENIZER"] = load_generator()
-        logger.info("[SUT] Generator model loaded successfully.")
+        logger.info("[SUT:TRACE] Generator model loaded successfully.")
     
     
 def subsequent_edit_recommendation(json_input: dict):
@@ -109,7 +108,7 @@ def subsequent_edit_recommendation(json_input: dict):
     
     global LSP, MODELS
     logger = json_input.pop("logger")
-    logger.debug(f"[SUT] Subsequent edit recommendation json input: {json.dumps(json_input, indent=2)}")
+    logger.debug(f"[SUT:TRACE] Subsequent edit recommendation json input: {json.dumps(json_input, indent=2)}")
     repo_dir = json_input["repo_dir"]
     changed_files = json_input["changed_files"]
     prior_edits = json_input["prior_edits"]
@@ -136,7 +135,7 @@ def subsequent_edit_recommendation(json_input: dict):
     label_predictions = {}
     for file_path in tqdm(
         changed_files,
-        desc = f"{datetime.now().strftime('%Y/%m/%d %H:%M:%S')} - INFO     - __main__ -   [SUT] Scanning files for next edit location"
+        desc = f"{datetime.now().strftime('%Y/%m/%d %H:%M:%S')} - INFO     - __main__ -   [SUT:TRACE] Scanning files for next edit location"
     ):
         abs_file_path = os.path.normpath(os.path.join(repo_dir, file_path))
         with open(abs_file_path, "r", encoding="utf-8") as f:
@@ -154,13 +153,13 @@ def subsequent_edit_recommendation(json_input: dict):
         try:
             assert len(locator_results["inline_predictions"]) == len(content)
         except:
-            logger.error(f"[SUT] Locator predictions length {len(locator_results['inline_predictions'])} does not match with file content length {len(content)} for file {file_path}.")
+            logger.error(f"[SUT:TRACE] Locator predictions length {len(locator_results['inline_predictions'])} does not match with file content length {len(content)} for file {file_path}.")
             raise AssertionError
         
         label_predictions[file_path] = locator_results
     
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT] Locator predictions are saved to debug/TRACE_locator_outputs.json.")
+        logger.debug(f"[SUT:TRACE] Locator predictions are saved to debug/TRACE_locator_outputs.json.")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_locator_outputs.json", "w", encoding="utf-8") as f:
             json.dump(label_predictions, f, indent=2)
@@ -169,7 +168,7 @@ def subsequent_edit_recommendation(json_input: dict):
     predicted_snapshots = edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edit_description, language, MODELS["GENERATOR"], MODELS["GENERATOR_TOKENIZER"], logger)
     
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT] Subsequent edit recommendation snapshots are saved to debug/TRACE_subsequent_edit_recommendation_snapshots.json")
+        logger.debug(f"[SUT:TRACE] Subsequent edit recommendation snapshots are saved to debug/TRACE_subsequent_edit_recommendation_snapshots.json")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_subsequent_edit_recommendation_snapshots.json", "w", encoding="utf-8") as f:
             json.dump(predicted_snapshots, f, indent=2)
@@ -189,7 +188,7 @@ def generate_edit_solution(json_input: dict):
     global MODELS
     
     logger = json_input.pop("logger")
-    logger.debug(f"[SUT] Edit content generation json input: \n{json.dumps(json_input, indent=2)}")
+    logger.debug(f"[SUT:TRACE] Edit content generation json input: \n{json.dumps(json_input, indent=2)}")
     target_edit = json_input["target_edit"]
     repo_dir = json_input["repo_dir"]
     language = json_input["language"]
@@ -211,7 +210,7 @@ def generate_edit_solution(json_input: dict):
         return None
     
     edit_solution = generator_inference(input_dataset, MODELS["GENERATOR"], MODELS["GENERATOR_TOKENIZER"])[0][0]
-    logger.debug(f"[SUT] Generated edit solutions: \n{edit_solution}")
+    logger.debug(f"[SUT:TRACE] Generated edit solutions: \n{edit_solution}")
     
     # convert edit solution to snapshot format
     pred_snapshots = {}
@@ -244,7 +243,7 @@ def generate_edit_solution(json_input: dict):
     pred_snapshots[target_edit["file_path"]] = segments
     
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT] Generator predicted snapshots are saved to debug/TRACE_generator_predicted_snapshots_for_single_edit.json.")
+        logger.debug(f"[SUT:TRACE] Generator predicted snapshots are saved to debug/TRACE_generator_predicted_snapshots_for_single_edit.json.")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_generator_predicted_snapshots_for_single_edit.json", "w", encoding="utf-8") as f:
             json.dump(pred_snapshots, f, indent=2)
@@ -267,6 +266,6 @@ def end(json_input: dict):
     try:
         LSP.close()
     except:
-        logger.error("[SUT] Failed to close LSP server.")
+        logger.error("[SUT:TRACE] Failed to close LSP server.")
         
-    logger.info("[SUT] Session ended and resources cleaned up.")
+    logger.info("[SUT:TRACE] Session ended and resources cleaned up.")

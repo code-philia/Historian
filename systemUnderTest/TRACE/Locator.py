@@ -154,7 +154,7 @@ def make_locator_dataset(sliding_windows, prior_edit_hunks, edit_description, lo
         source_seqs.append(source_seq)
         
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT] Locator input sequences are saved to debug/TRACE_locator_input_sequences.json")
+        logger.debug(f"[SUT:TRACE] Locator input sequences are saved to debug/TRACE_locator_input_sequences.json")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_locator_input_sequences.json", "w", encoding="utf-8") as f:
             json.dump(source_seqs, f, indent=2)
