@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 
 from dotenv import load_dotenv
 from .utils import extract_hunks
@@ -13,14 +14,15 @@ FLOW_ANALYSIS_ENABLED = os.getenv("FLOW_ANALYSIS", "False").lower() in ("true", 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+logger = logging.getLogger("FRAMEWORK.commit")
+
 class Commit:
-    def __init__(self, commit_url, repos_dir, system_under_test, logger):
+    def __init__(self, commit_url, repos_dir, system_under_test):
         self.commit_sha = commit_url.split("/")[-1][:10]
         self.project_name = commit_url.split("/")[-3]
         self.repo_dir = os.path.join(repos_dir, self.project_name)
         self.commit_url = commit_url
         self.system_under_test = system_under_test
-        self.logger = logger
 
         record_fp = os.path.join(OUTPUT_DIR, f"{self.project_name}-{self.commit_sha}-{self.system_under_test}-simulation-results.json")
         if os.path.exists(record_fp):
@@ -30,19 +32,19 @@ class Commit:
             self.commit_snapshots = record["commit_snapshots"]
             if FLOW_ANALYSIS_ENABLED:
                 assert "partial_orders" in record, f"Flow analysis enabled but no partial order records found for {self.commit_url}."
-                self.logger.info(f"[FRAMEWORK] Flow analysis enabled.")
+                logger.info(f"Flow analysis enabled.")
                 self.partial_orders = record["partial_orders"]
             self.simulation_order = record["simulation_order"]
             self.replay_progress = [] # to track the progress of replaying this simulation progress
             self.SUT_prediction_records = record["SUT_prediction_records"]
-            self.logger.info(f"[FRAMEWORK] Simulation results found for {self.commit_url} under {self.system_under_test}. Loaded records.")
+            logger.info(f"Simulation results found for {self.commit_url} under {self.system_under_test}. Loaded records.")
 
         else:
-            self.logger.info(f"[FRAMEWORK] No simulation results found for {self.commit_sha}. Extracting hunks and restoring edit order.")
+            logger.info(f"No simulation results found for {self.commit_sha}. Extracting hunks and restoring edit order.")
             self.commit_message, self.commit_snapshots = extract_hunks(self.commit_url, repos_dir)
             if FLOW_ANALYSIS_ENABLED:
-                self.logger.info(f"[FRAMEWORK] Flow analysis enabled. Recovering edit partial order graph for commit {self.commit_url}.")
-                analyze_dependency(self, logger=self.logger)
+                logger.info(f"Flow analysis enabled. Recovering edit partial order graph for commit {self.commit_url}.")
+                analyze_dependency(self)
                 self.partial_orders, self.allowed_next_edit_idxs = restore_edit_order(self.commit_snapshots, commit_url, mock_order=False)
             
             self.allowed_next_edit_idxs = [0]
@@ -99,7 +101,7 @@ class Commit:
         Return the partial order graph of edits.
         """
         if not FLOW_ANALYSIS_ENABLED:
-            self.logger.error(f"[FRAMEWORK] Flow analysis is disabled, no partial order graph available.")
+            logger.error(f"Flow analysis is disabled, no partial order graph available.")
             raise RuntimeError("Flow analysis is disabled.")
         return {
             "nodes": self.get_edits(),
@@ -114,9 +116,9 @@ class Commit:
         allowed_next_edit_idxs = [edit["idx"] for edit in edits if edit["allowed_as_next"] == True]
         future_edit_idxs = [edit["idx"] for edit in edits if edit["simulated"] == False and edit["allowed_as_next"] == False]
 
-        self.logger.info(f"[FRAMEWORK] Simulated edits:    {self.simulation_order}")
-        self.logger.info(f"[FRAMEWORK] Allowed next edits: {allowed_next_edit_idxs}")
-        self.logger.info(f"[FRAMEWORK] Future edits:       {future_edit_idxs}")
+        logger.info(f"Simulated edits:    {self.simulation_order}")
+        logger.info(f"Allowed next edits: {allowed_next_edit_idxs}")
+        logger.info(f"Future edits:       {future_edit_idxs}")
 
     def get_current_version(self):
         """

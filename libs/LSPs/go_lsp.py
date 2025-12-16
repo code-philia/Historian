@@ -1,10 +1,11 @@
 import os
 import json
 import subprocess
+
 from .language_server import LanguageServer
 
 class GoLanguageServer(LanguageServer):
-    def __init__(self, log: bool = False, logger=None):
+    def __init__(self, log: bool = False):
         language_id = "go"
         server_command = ["gopls", "serve"]
         env = os.environ.copy()
@@ -12,7 +13,7 @@ class GoLanguageServer(LanguageServer):
         env["GOPATH"] = env.get("GOPATH", os.path.expanduser("~/go"))  # Stick to default GOPATH
         env["GOFLAGS"] = "-mod=mod"  # let gopls analyze local files
 
-        super().__init__(language_id, server_command, log, logger=logger)
+        super().__init__(language_id, server_command, log)
         
     def _parse_rename_response(self, response, edits, old_name, new_name):
         """

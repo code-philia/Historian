@@ -5,9 +5,9 @@ from typing import Dict
 from .language_server import LanguageServer
 
 class TsLanguageServer(LanguageServer):
-    def __init__(self, language_id: str, log: bool = False, logger=None):
+    def __init__(self, language_id: str, log: bool = False):
         server_command = ["typescript-language-server", "--stdio"]
-        super().__init__(language_id, server_command, log, logger=logger)
+        super().__init__(language_id, server_command, log)
     
     def _get_capabilities(self) -> Dict:
         """

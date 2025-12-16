@@ -16,6 +16,7 @@ load_dotenv(dotenv_path=os.path.join(PROJ_ROOT, ".env"))
 
 INVOKER_MODEL_PATH = os.getenv("INVOKER_MODEL_PATH")
 DEVICE = os.getenv("DEVICE")
+logger = logging.getLogger("TRACE.Invoker")
 
 class Invoker(nn.Module):
     """
@@ -74,7 +75,7 @@ def load_invoker():
     
     return invoker, tokenizer
 
-def ask_invoker(prior_edits, language, MODELS, logger):
+def ask_invoker(prior_edits, language, MODELS):
     """
     Func:
         Given a list of prior edit hunks, ask the expert to decide which LSP service to use
@@ -83,7 +84,6 @@ def ask_invoker(prior_edits, language, MODELS, logger):
         prior_edits: list of prior edit hunks
         language: programming language of the commit
         MODELS: dict of loaded models
-        logger: the logger object
     
     Return:
         service: the service name
@@ -93,8 +93,8 @@ def ask_invoker(prior_edits, language, MODELS, logger):
     prior_edit_type, service_info = logic_gate(prior_edits, language)
     if prior_edit_type == "normal":
         service = "normal"
-        logger.info(f"[SUT:TRACE] Last prior edit composition type prediction:")
-        logger.info(f"[SUT:TRACE] Heuristic logic : {service}")
+        logger.info(f"Last prior edit's predicted composition type: normal (heuristic)")
+        logger.info("TRACE scans project and recommend via Locator.")
         return service, service_info
     
     prior_edit_hunk_set = prior_edits[-min(3, len(prior_edits)):] 
@@ -128,8 +128,7 @@ def ask_invoker(prior_edits, language, MODELS, logger):
         input_seqs.append(input_seq)
     
     if input_seqs == []:
-        logger.info("Last prior edit composition type prediction:")
-        logger.info(f"Empty prior edits : normal")
+        logger.info(f"Last prior edit's predicted composition type: normal (0 prior edits)")
         return "normal", None
     
     invoker, invoker_tokenizer = MODELS["INVOKER"], MODELS["INVOKER_TOKENIZER"]
@@ -141,7 +140,7 @@ def ask_invoker(prior_edits, language, MODELS, logger):
     with torch.no_grad():
         logits = invoker(source_ids=source_ids,source_mask=source_masks,labels=None, train=False)
         probability = torch.sigmoid(logits).detach().cpu().numpy()
-        logger.info(f"[SUT:TRACE] Invoker prediction probability: {probability}")
+        logger.info(f"Invoker prediction probability: {probability}")
         binary_predictions = (probability >= threshold).astype(int)
     
     for prediction in binary_predictions:
@@ -165,16 +164,14 @@ def ask_invoker(prior_edits, language, MODELS, logger):
             service = "normal"
             service_confidence = None
 
-    logger.info("[SUT:TRACE] Last prior edit composition type prediction:")
-    logger.info(f"[SUT:TRACE] Heuristic logic : {prior_edit_type}")
-    logger.info(f"[SUT:TRACE] TRACE   Invoker : {service}")
+    logger.info(f"Last prior edit's predicted composition type: {prior_edit_type} (heuristic), {service} (Invoker)")
     if service_confidence != None:
-        logger.info(f"[SUT:TRACE] Invoker confidence: {service_confidence:.4f}")
+        logger.info(f"Invoker confidence: {service_confidence:.4f}")
         
     if prior_edit_type != service:
         service = "normal"
         service_info = None
-        logger.info(f"[SUT:TRACE] Invoker prediction inconsistent with heuristic logic, invoke no service.")
+        logger.info(f"Invoker prediction inconsistent with heuristic logic, invoke no service.")
     
     return service, service_info
     

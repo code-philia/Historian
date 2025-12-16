@@ -22,11 +22,11 @@ os.makedirs(REPOS_DIR, exist_ok=True)
 # Global variables
 COMMIT = None
 
-logging.basicConfig(format = '%(asctime)s - %(levelname)-8s - %(name)s -   %(message)s',
+logging.basicConfig(format = '%(asctime)s - %(levelname)-8s - %(name)-20s -   %(message)s',
                     datefmt = '%Y/%m/%d %H:%M:%S',
                     # level = logging.DEBUG)
                     level = logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("FRAMEWORK.main")
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
 
@@ -62,12 +62,13 @@ def main(json_input: dict):
         import systemUnderTest.AgenticTRACE.main as SUT
 
     if status == "init":
+        logger.info(f"------------------------ Phase 1: Initialization ------------------------")
         # Parse edit hunks from given commit URL
-        COMMIT = Commit(commit_url, REPOS_DIR, system_under_test, logger)
+        COMMIT = Commit(commit_url, REPOS_DIR, system_under_test)
 
         # If this commit under this system under test has been simulated before, return the previous results
         if len(COMMIT.SUT_prediction_records) == len(COMMIT.get_edits()):
-            logger.info("[FRAMEWORK] This commit has been simulated before. Returning the previous results.")
+            logger.info("This commit has been simulated before. Returning the previous results.")
             response_message = COMMIT.SUT_prediction_records[len(COMMIT.replay_progress)]
             COMMIT.replay_progress.append(COMMIT.simulation_order[len(COMMIT.replay_progress)])
             return response_message
@@ -81,7 +82,6 @@ def main(json_input: dict):
         call_sut_main(
             SUT,
             {
-                "logger": logger,
                 "id": COMMIT.commit_sha,
                 "language": language,
                 "project_name": COMMIT.project_name,
@@ -93,10 +93,10 @@ def main(json_input: dict):
             }
         )
 
-        logger.info(f"[FRAMEWORK] Successfully set up {system_under_test} as System Under Test.")
+        logger.info(f"Successfully set up {system_under_test} as System Under Test.")
 
         # Prepare the initial pred snapshot, where only contain the init edit
-        logger.info(f"[FRAMEWORK] Selected Edit {init_edit_idx} as the init edit for simulation.")
+        logger.info(f"Selected Edit {init_edit_idx} as the init edit for simulation.")
         pred_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(init_edit_idx))
         
         # Update the project status with the new edit index
@@ -133,7 +133,7 @@ def main(json_input: dict):
 
         # If this commit under this system under test has been simulated before, return the previous results
         if len(COMMIT.SUT_prediction_records) == len(COMMIT.get_edits()):
-            logger.info("[FRAMEWORK] This commit has been simulated before. Returning the previous results.")
+            logger.info("This commit has been simulated before. Returning the previous results.")
             response_message = COMMIT.SUT_prediction_records[len(COMMIT.replay_progress)]
             COMMIT.replay_progress.append(COMMIT.simulation_order[len(COMMIT.replay_progress)])
             return response_message
@@ -155,8 +155,8 @@ def main(json_input: dict):
         # NOTE: Current simulation status V.S. suggested edit version
         # NOTE: Not the commit base version V.S. suggested edit version
         # -----------------------------------------------------------
+        logger.info(f"------------- Phase 2 - Step A: Request full recommendation -------------")
         json_input = {
-            "logger": logger,
             "id": COMMIT.commit_sha,
             "language": language,
             "project_name": COMMIT.project_name,
@@ -170,7 +170,7 @@ def main(json_input: dict):
         pred_snapshots = call_sut_main(SUT, json_input)
         end = time.time()
         time_cost = end - start
-        logger.info(f"[FRAMEWORK] Time taken for end-to-end subsequent edit recommendation: {time_cost:.4f} seconds")
+        logger.info(f"Time taken for end-to-end subsequent edit recommendation: {time_cost:.4f} seconds")
         pred_snapshots = indexing_edits_within_snapshots(pred_snapshots)
         # with open("debug.json", "w") as f:
         #     json.dump(pred_snapshots, f, indent=4)
@@ -180,21 +180,22 @@ def main(json_input: dict):
         
         # Compare predicted snapshots with current ground-truth snapshots
         # -----------------------------------------------------------
+        logger.info(f"------------ Phase 2 - Step B: Evaluate against ground truth ------------")
         # NOTE: COMMIT.get_not_simulated_edit_snapshots() returns the gold
         # NOTE: Current simulation status V.S commit head version
         # Match the predicted edits with the ground truth edits
         current_snapshots = copy.deepcopy(COMMIT.get_not_simulated_edit_snapshots()) # Deepcopy is necessary as edit status will have update
-        pred_locations, gold_locations, matched_locations, pred_snapshots = match_suggestion_with_groundtruth(pred_snapshots, current_snapshots, logger)
+        pred_locations, gold_locations, matched_locations, pred_snapshots = match_suggestion_with_groundtruth(pred_snapshots, current_snapshots)
         
         # Evaluate the flow pattern of the suggested edits
         previously_applied_locations = copy.deepcopy(COMMIT.get_previously_applied_locations()) # Deepcopy is necessary as edit status will have update
         flow_pattern = evaluate_flow_pattern(pred_locations, matched_locations, previously_applied_locations)
-        logger.info(f"[FRAMEWORK] Flow pattern: {json.dumps(flow_pattern)}")
+        logger.info(f"Flow pattern: {json.dumps(flow_pattern)}")
         
         # Evaluate traditional metrics
-        traditional_metrics = evaluate_traiditional_metrics(pred_locations, gold_locations, matched_locations, logger)
+        traditional_metrics = evaluate_traiditional_metrics(pred_locations, gold_locations, matched_locations)
         traditional_metrics["latency"] = time_cost
-        logger.info(f"[FRAMEWORK] Traditional metrics: {json.dumps(traditional_metrics)}")
+        logger.info(f"Traditional metrics: {json.dumps(traditional_metrics)}")
         # -----------------------------------------------------------
         
         
@@ -208,13 +209,13 @@ def main(json_input: dict):
                 traditional_metrics["BLEU-4"] = edit["BLEU-4"]
                 COMMIT.update_edit_status(edit["matchWith"], "simulated", True)
                 next_edit_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(new_edit_idx))
-                logger.info(f"[FRAMEWORK] Suggestion matches with Edit {edit['matchWith']}, apply to project")
-                logger.info(f"[FRAMEWORK] BLEU-4 score: {edit['BLEU-4']:.2f}")
+                logger.info(f"Suggestion matches with Edit {edit['matchWith']}, apply to project")
+                logger.info(f"BLEU-4 score: {edit['BLEU-4']:.2f}")
                 break
             
         # Otherwise, randomly select one from allowed next edit idxs as the subsequent edit, and request for edit generation
         if new_edit_idx is None:
-            logger.info(f"[FRAMEWORK] No suggested edit matches with any ground-truth & allowed-as-next edit")
+            logger.info(f"--------- Phase 2 - Step C: Request edit content recommendation ---------")
             edits = COMMIT.get_edits()
             allowed_next_edit_idxs = [edit["idx"] for edit in edits if edit["allowed_as_next"] == True]
             # Select randomly from allowed next edits if any
@@ -227,16 +228,15 @@ def main(json_input: dict):
             for edit in edits:
                 if edit["idx"] == new_edit_idx:
                     target_edit = edit
-            logger.info(f"[FRAMEWORK] Select Edit {new_edit_idx} for edit generation and apply to project")
-            logger.debug(f"[FRAMEWORK] Edit selected to apply: \n{json.dumps(target_edit, indent=2)}")
+            logger.info(f"Select Edit {new_edit_idx} for edit generation and apply to project")
+            logger.debug(f"Edit selected to apply: \n{json.dumps(target_edit, indent=2)}")
             try:
                 assert target_edit is not None
             except:
-                logger.error(f"[FRAMEWORK] Cannot find target edit for idx {new_edit_idx}.")
+                logger.error(f"Cannot find target edit for idx {new_edit_idx}.")
                 raise AssertionError
                 
             json_input = {
-                "logger": logger,
                 "id": COMMIT.commit_sha,
                 "language": language,
                 "project_name": COMMIT.project_name,
@@ -251,13 +251,14 @@ def main(json_input: dict):
             next_edit_snapshots = copy.deepcopy(COMMIT.get_next_edit_snapshots(new_edit_idx))
             traditional_metrics["BLEU-4"] = calculate_bleu_between_snapshots(target_location_pred_snapshots, next_edit_snapshots)
             COMMIT.update_edit_status(new_edit_idx, "simulated", True)
-            logger.info(f"[FRAMEWORK] Requested edit generation for Edit {new_edit_idx}, having BLEU-4 score {traditional_metrics['BLEU-4']:.2f}")
+            logger.info(f"Requested edit generation for Edit {new_edit_idx}, having BLEU-4 score {traditional_metrics['BLEU-4']:.2f}")
         # -----------------------------------------------------------
         
         
         # Maintain the project status for next simulation step
         # -----------------------------------------------------------
-        logger.info(f"[FRAMEWORK] Apply Edit {new_edit_idx} to the project repository for next simulation step.")
+        logger.info(f"---------------- Phase 2 - Step D: Update project states ----------------")
+        logger.info(f"Apply Edit {new_edit_idx} to the project repository for next simulation step.")
         # Update simulation progress for COMMIT
         COMMIT.update_allowed_as_next()
         # Update the project status with the new edit index
@@ -273,7 +274,8 @@ def main(json_input: dict):
         # Prepare the response message
         # -----------------------------------------------------------
         if len(unsimulated_edits) == 0:
-            logger.info("[FRAMEWORK] All edits have been simulated. Simulation completed.")
+            logger.info(f"---------------------------- Phase 3: Report ----------------------------")
+            logger.info("All edits have been simulated. Simulation completed.")
             # NOTE: The pred_snapshots are a comparison between:
             # NOTE: The current version V.S. suggested edit version
             # NOTE: The next_edit_snapshots are a comparsion between:
@@ -319,7 +321,7 @@ def sync_project(current_version, repo_dir):
         with open(file_path, "w") as f:
             f.write("".join(file_content))
 
-def match_suggestion_with_groundtruth(pred_snapshots, gdth_snapshots, logger):
+def match_suggestion_with_groundtruth(pred_snapshots, gdth_snapshots):
     pred_replace_locations, pred_insert_locations = snapshot_2_locations(pred_snapshots)
     gdth_replace_locations, gdth_insert_locations = snapshot_2_locations(gdth_snapshots)
     
@@ -328,13 +330,13 @@ def match_suggestion_with_groundtruth(pred_snapshots, gdth_snapshots, logger):
         try:
             assert "confidence" in loc and "suggestionRank" in loc
         except:
-            logger.error("[FRAMEWORK] Predicted locations must contain 'confidence' and 'suggestionRank' fields.")
+            logger.error("Predicted locations must contain 'confidence' and 'suggestionRank' fields.")
             raise AssertionError
     for loc in gdth_replace_locations + gdth_insert_locations:
         try:
             assert "idx" in loc and "allowed_as_next" in loc
         except:
-            logger.error("[FRAMEWORK] Ground truth locations must contain 'idx' and 'allowed_as_next' fields.")
+            logger.error("Ground truth locations must contain 'idx' and 'allowed_as_next' fields.")
             raise AssertionError
         
     # match suggestions with ground truth edits
@@ -435,7 +437,7 @@ def evaluate_flow_pattern(pred_locations, matched_locations, previously_applied_
     return flow_pattern
    
    
-def evaluate_traiditional_metrics(pred_locations, gold_locations, matched_locations, logger):
+def evaluate_traiditional_metrics(pred_locations, gold_locations, matched_locations):
     traditional_metrics = {}
     for ith in ["1", "3", "5", "10"]:
         key = f"tp@{ith}"
@@ -460,7 +462,7 @@ def evaluate_traiditional_metrics(pred_locations, gold_locations, matched_locati
     traditional_metrics["fn@all"] = len(allowed_locations) - num_flow_keeping
     
     if len(pred_locations) > 0 and pred_locations[0]["confidence"] is None:
-        logger.warning("[FRAMEWORK] Current SUT does not provide confidence scores or suggestion ranks for suggested edits. Top-k metrics cannot be calculated.")
+        logger.warning("Current SUT does not provide confidence scores or suggestion ranks for suggested edits. Top-k metrics cannot be calculated.")
         return
     
     # kth tp
@@ -481,7 +483,7 @@ def calculate_bleu_between_snapshots(pred_snapshots, gdth_snapshots):
         try:
             assert len(pred_snapshot) == len(gold_snapshot)
         except:
-            logger.error("[FRAMEWORK] Snapshot length mismatch when calculating BLEU-4.")
+            logger.error("Snapshot length mismatch when calculating BLEU-4.")
             with open("debug/calculate_bleu_between_snapshots.json", "w") as f:
                 import json
                 json.dump({
@@ -493,7 +495,7 @@ def calculate_bleu_between_snapshots(pred_snapshots, gdth_snapshots):
             try:
                 assert type(pred_window) == type(gold_window)
             except:
-                logger.error("[FRAMEWORK] Snapshot window type mismatch when calculating BLEU-4.")
+                logger.error("Snapshot window type mismatch when calculating BLEU-4.")
                 raise AssertionError
             if isinstance(pred_window, list):
                 if pred_window != gold_window:
@@ -584,7 +586,7 @@ if __name__ == "__main__":
     simulated_urls = 0
     for language, urls in test_urls.items():
         for url_info in urls:
-            logger.info(f"[FRAMEWORK] Simulate commit: {url_info['commit_url']}")
+            logger.info(f"Simulate commit: {url_info['commit_url']}")
             rq3_origin(url_info["commit_url"], SUT, language)
             simulated_urls += 1
             

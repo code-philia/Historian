@@ -2,10 +2,11 @@ import os
 import json
 import time
 import shutil
+
 from .language_server import LanguageServer
 
 class JavaLanguageServer(LanguageServer):
-    def __init__(self, log: bool = False, logger=None):
+    def __init__(self, log: bool = False):
         language_id = "java"
         current_path = os.path.dirname(os.path.abspath(__file__))
         jdt_lsp_jar = os.path.join(current_path, "jdt-language-server/plugins/org.eclipse.equinox.launcher_1.6.900.v20240613-2009.jar")
@@ -27,7 +28,7 @@ class JavaLanguageServer(LanguageServer):
             "-configuration", jdt_lsp_config,
             "-data", self.temp_data_path
         ]
-        super().__init__(language_id, COMMAND, log, logger=logger)
+        super().__init__(language_id, COMMAND, log)
     
     def _parse_rename_response(self, response, edits, old_name, new_name):
         """

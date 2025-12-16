@@ -15,46 +15,48 @@ from .is_clone import find_clone_in_project
 from .enriched_semantic import construct_edit_hunk
 from .utils import merge_snapshots, diagnostic_2_sliding_windows
 
-def TRACE(json_input, MODELS, LSP, logger):
+logger = logging.getLogger("TRACE.TRACE")
+
+def TRACE(json_input, MODELS, LSP):
     """
     Use LSP & Invoker to predict the next edit location
     """
     prior_edits = json_input["prior_edits"]
     language = json_input["language"]
-    service, service_info = ask_invoker(prior_edits, language, MODELS, logger)
+    service, service_info = ask_invoker(prior_edits, language, MODELS)
     
     predictions = None
     # STEP 1: logic based code navigation
     # STEP 1.1: rename edit composition
     if service == "rename" :
         start = time.time()
-        predict_snapshots = process_rename(service_info, json_input, LSP, logger)
+        predict_snapshots = process_rename(service_info, json_input, LSP)
         end = time.time()
         if predict_snapshots is None or predict_snapshots == {}:
-            logger.info(f"[SUT:TRACE] LSP rename retrieved 0 locations.")
+            logger.info(f"LSP rename returned 0 locations.")
         else:
             return predict_snapshots
         
     # STEP 1.2: def&ref edit composition
     if service == "def&ref" or service == "all":
         start = time.time()
-        predictions = process_def_ref(service_info, json_input, LSP, MODELS, logger)
+        predictions = process_def_ref(service_info, json_input, LSP, MODELS)
         end = time.time()
         if predictions is None:
-            logger.info(f"LSP def&ref returned empty")
+            logger.info(f"LSP def&ref returned 0 locations.")
         # we don't return prediction directly, as we may receive diagnostics from LSP
         
     # STEP 1.3: code clone edit composition
     if service == "clone" or service == "all":
         start = time.time()
-        predictions = process_code_clone(service_info, json_input, MODELS, logger)
+        predictions = process_code_clone(service_info, json_input, MODELS)
         end = time.time()
         if predictions is None:
-            logger.info(f"LSP clone returned empty")
+            logger.info(f"LSP clone returned 0 locations.")
 
     # STEP 2: error based code navigation
     # try:
-    diagnose_predictions = process_diagnose(json_input, LSP, MODELS, logger)
+    diagnose_predictions = process_diagnose(json_input, LSP, MODELS)
     if diagnose_predictions is not None:
         if predictions is not None:
             # merge the predictions from logic and error
@@ -66,7 +68,7 @@ def TRACE(json_input, MODELS, LSP, logger):
     
     return predictions
 
-def process_rename(service_info, json_input, LSP, logger):
+def process_rename(service_info, json_input, LSP):
     """
     Process rename edit composition using LSP.
     
@@ -74,7 +76,6 @@ def process_rename(service_info, json_input, LSP, logger):
         service_info (dict): Information provided by the Invoker about the rename service, including keys: ['deleted_identifiers', 'added_identifiers', 'map'], where 'map' is a dictionary mapping old identifier names to new identifier names.
         json_input (dict): The input JSON containing necessary information, including keys: ['id', 'language', 'project_name', 'status', 'repo_dir', 'prior_edits', 'edit_description']
         LSP (LanguageServer): The initialized Language Server Protocol (LSP) instance for the target programming language.
-        logger (Logger): Logger for logging information.
         
     Returns:
         predict_snapshots (dict): A dictionary mapping file paths to predicted snapshots after applying rename edits.
@@ -106,7 +107,7 @@ def process_rename(service_info, json_input, LSP, logger):
         try:
             response = LSP.rename(target_edit_abs_file_path, position, new_name, wait_time=1)
         except:
-            logger.error("[LSP] Error in getting rename services.")
+            logger.error("Error in getting rename services.")
             time.sleep(5)
             # restore the latest version before returning
             with open(target_edit_abs_file_path, "w") as f:
@@ -127,7 +128,7 @@ def process_rename(service_info, json_input, LSP, logger):
         for edit in edits_in_file:
             # if the rename location is in the last edit, remove it
             need_filter = False
-            logger.debug(f"[SUT:TRACE] Edit retrieved by LSP from same file as last prior edit: {edit}, last prior edit location: {target_edit['file_path']}:{target_edit_start_at_line}")
+            logger.debug(f"Edit retrieved by LSP from same file as last prior edit: {edit}, last prior edit location: {target_edit['file_path']}:{target_edit_start_at_line}")
             if edit["range"]["start"]["line"] in list(range(target_edit_start_at_line, target_edit_start_at_line + len(target_edit["before"]))):
                 need_filter = True
             if not need_filter:
@@ -150,7 +151,7 @@ def process_rename(service_info, json_input, LSP, logger):
             if edit["range"]["start"]["line"] >= target_edit_start_at_line:
                 edit["range"]["start"]["line"] += offset
                 edit["range"]["end"]["line"] += offset
-    logger.debug(f"[SUT:TRACE] LSP rename retrieved the following locations: \n{json.dumps(edits, indent=2)}")
+    logger.debug(f"LSP rename retrieved the following locations: \n{json.dumps(edits, indent=2)}")
     
     # Step 5: Restore the latest version after all prior edits applied
     with open(target_edit_abs_file_path, "w") as f:
@@ -169,11 +170,11 @@ def process_rename(service_info, json_input, LSP, logger):
             predict_snapshots[rel_file_path] = file_content
             
         line_idx = 0
-        predict_snapshots[rel_file_path] = convert_rename_edits_to_snapshot(predict_snapshots[rel_file_path], rel_file_path, edits_in_file, logger)
+        predict_snapshots[rel_file_path] = convert_rename_edits_to_snapshot(predict_snapshots[rel_file_path], rel_file_path, edits_in_file)
                 
     return predict_snapshots
 
-def process_def_ref(service_info, json_input, LSP, MODELS, logger):
+def process_def_ref(service_info, json_input, LSP, MODELS):
     repo_dir = json_input["repo_dir"]
     changed_files = json_input["changed_files"]
     target_edit = json_input["prior_edits"][-1]
@@ -187,7 +188,7 @@ def process_def_ref(service_info, json_input, LSP, MODELS, logger):
     try:
         response = LSP.references(target_edit_file_path, position, wait_time=1)
     except:
-        logger.error("[LSP] Error in finding references.")
+        logger.error("Error in finding references.")
         time.sleep(5)
         return None
     
@@ -210,18 +211,18 @@ def process_def_ref(service_info, json_input, LSP, MODELS, logger):
             continue
         identified_locations.append(location)
         
-    logger.debug(f"[SUT:TRACE] LSP def&ref retrieved the following locations: \n{json.dumps(identified_locations, indent=2)}")
-    return LSP_location_to_predicted_snapshots("def&ref", identified_locations, json_input, MODELS, logger)
+    logger.debug(f"LSP def&ref retrieved the following locations: \n{json.dumps(identified_locations, indent=2)}")
+    return LSP_location_to_predicted_snapshots("def&ref", identified_locations, json_input, MODELS)
         
-def process_code_clone(service_info, json_input, MODELS, logger):
+def process_code_clone(service_info, json_input, MODELS):
     repo_dir = json_input["repo_dir"]
     language = json_input["language"]
     changed_files = json_input["changed_files"]
     
     clone_locations = find_clone_in_project(service_info, changed_files, repo_dir, threshold=80, lsp_style=True)
-    return LSP_location_to_predicted_snapshots("clone", clone_locations, json_input, MODELS, logger)
+    return LSP_location_to_predicted_snapshots("clone", clone_locations, json_input, MODELS)
 
-def process_diagnose(json_input, LSP, MODELS, logger):
+def process_diagnose(json_input, LSP, MODELS):
     repo_dir = json_input["repo_dir"]
     changed_files = json_input["changed_files"]
     prior_edits = json_input["prior_edits"]
@@ -232,9 +233,9 @@ def process_diagnose(json_input, LSP, MODELS, logger):
     }
 
     diagnose_locations = LSP.acquire_diagnose(changed_files, last_edit_region)
-    return LSP_location_to_predicted_snapshots("diagnose", diagnose_locations, json_input, MODELS, logger)
+    return LSP_location_to_predicted_snapshots("diagnose", diagnose_locations, json_input, MODELS)
  
-def LSP_location_to_predicted_snapshots(LSP_name, identified_locations, json_input, MODELS, logger):
+def LSP_location_to_predicted_snapshots(LSP_name, identified_locations, json_input, MODELS):
     assert LSP_name in ["def&ref", "clone", "diagnose"]
     repo_dir = json_input["repo_dir"]
     language = json_input["language"]
@@ -252,11 +253,11 @@ def LSP_location_to_predicted_snapshots(LSP_name, identified_locations, json_inp
     # Prepare prior edit hunks
     prior_edit_hunks = []
     for prior_edit in prior_edits:
-        prior_edit_hunk = construct_edit_hunk(prior_edit, repo_dir, language, logger, expect_old_code=False)
+        prior_edit_hunk = construct_edit_hunk(prior_edit, repo_dir, language, expect_old_code=False)
         prior_edit_hunks.append(CodeWindow(prior_edit_hunk, "hunk"))
         
     # Convert sliding windows into Locator input dataset
-    dataset = make_locator_dataset(sliding_windows, prior_edit_hunks, edit_description, MODELS["LOCATOR_TOKENIZER"], logger)
+    dataset = make_locator_dataset(sliding_windows, prior_edit_hunks, edit_description, MODELS["LOCATOR_TOKENIZER"])
     dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
     
     # Locator prediction
@@ -307,17 +308,17 @@ def LSP_location_to_predicted_snapshots(LSP_name, identified_locations, json_inp
     if not find_location:
         return None
     
-    predicted_snapshots = edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edit_description, language, MODELS["GENERATOR"], MODELS["GENERATOR_TOKENIZER"], logger)
+    predicted_snapshots = edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edit_description, language, MODELS["GENERATOR"], MODELS["GENERATOR_TOKENIZER"])
     
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT:TRACE] Edit recommendation snapshots via {LSP_name} + locator + generator are saved to debug/TRACE_{LSP_name}_recommendation_snapshots.json")
+        logger.debug(f"Edit recommendation snapshots via {LSP_name} + locator + generator are saved to debug/TRACE_{LSP_name}_recommendation_snapshots.json")
         os.makedirs("debug", exist_ok=True)
         with open(f"debug/TRACE_{LSP_name}_recommendation_snapshots.json", "w", encoding="utf-8") as f:
             json.dump(predicted_snapshots, f, indent=2)
     
     return predicted_snapshots
    
-def convert_rename_edits_to_snapshot(content_lines, file_path, edits_in_file, logger):
+def convert_rename_edits_to_snapshot(content_lines, file_path, edits_in_file):
     # Group edits by line number
     edits_by_line = defaultdict(list)
     for edit in edits_in_file:
@@ -364,7 +365,7 @@ def convert_rename_edits_to_snapshot(content_lines, file_path, edits_in_file, lo
                 try:
                     assert line_content[start_char:end_char] == edit['oldText']
                 except:
-                    logger.error(f"[SUT:TRACE] Mismatch in expected text for edit at {file_path}:{ln}, character {start_char}~{end_char} expected `{edit['oldText']}`, found `{line_content[start_char:end_char]}`")
+                    logger.error(f"Mismatch in expected text for edit at {file_path}:{ln}, character {start_char}~{end_char} expected `{edit['oldText']}`, found `{line_content[start_char:end_char]}`")
                     raise AssertionError
                 
                 after_line = after_line[:start_char] + edit['newText'] + after_line[end_char:]

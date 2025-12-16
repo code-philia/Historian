@@ -6,7 +6,6 @@ import logging
 import argparse
 
 import torch.nn as nn
-from tqdm import tqdm
 from datetime import datetime
 from dotenv import load_dotenv
 from rank_bm25 import BM25Okapi
@@ -22,6 +21,7 @@ load_dotenv(dotenv_path=os.path.join(PROJ_ROOT, ".env"))
 LOCATOR_MODEL_PATH = os.getenv("LOCATOR_MODEL_PATH")
 DEVICE = os.getenv("DEVICE")
 
+logger = logging.getLogger("TRACE.Locator")
 
 class TRACELocator(nn.Module):
     """
@@ -136,7 +136,7 @@ def load_locator():
     
     return locator,locator_tokenizer
     
-def make_locator_dataset(sliding_windows, prior_edit_hunks, edit_description, locator_tokenizer, logger):
+def make_locator_dataset(sliding_windows, prior_edit_hunks, edit_description, locator_tokenizer):
     """
     This function help each sliding window to find syntactically similar prior edits, then form the input sequence for locator model.
 
@@ -154,7 +154,7 @@ def make_locator_dataset(sliding_windows, prior_edit_hunks, edit_description, lo
         source_seqs.append(source_seq)
         
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT:TRACE] Locator input sequences are saved to debug/TRACE_locator_input_sequences.json")
+        logger.debug(f"Locator input sequences are saved to debug/TRACE_locator_input_sequences.json")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_locator_input_sequences.json", "w", encoding="utf-8") as f:
             json.dump(source_seqs, f, indent=2)

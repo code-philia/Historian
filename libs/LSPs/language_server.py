@@ -2,20 +2,23 @@ import os
 import re
 import json
 import time
-import subprocess
 import select
+import logging
+import subprocess
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 
+logger = logging.getLogger("libs.LSPs")
+
 class LanguageServer(ABC):
-    def __init__(self, language_id: str, server_command: List[str], log: bool = False, logger = None):
+    def __init__(self, language_id: str, server_command: List[str], log: bool = False):
         """
         Initialize the language server process.
         """
         self.language_id = language_id
         self.request_id: int = 1
         self.log: bool = log
-        self.logger = logger
         self.workspace_file_version: Dict[str, int] = {}
         self.workspace_dir: Optional[str] = None
         try:
@@ -208,8 +211,7 @@ class LanguageServer(ABC):
         self._send_notification("exit")
         self.process.terminate()
         self.process.wait()
-        if self.logger is not None:
-            self.logger.info("[LSP] Language Server closed.")
+        logger.info("[LSP] Language Server closed.")
         
         return close_message
 
@@ -293,8 +295,7 @@ class LanguageServer(ABC):
 
             except (RuntimeError, json.JSONDecodeError) as e:
                 # Fatal error - LSP server sent malformed data or crashed
-                if self.logger:
-                    self.logger.error(f"[LSP] Error reading message: {e}")
+                logger.error(f"[LSP] Error reading message: {e}")
                 # Return what we have collected so far
                 return all_messages if return_all else desired_messages
     
@@ -677,21 +678,18 @@ class LanguageServer(ABC):
 
             # Skip files that don't match this LSP's language
             if not self._should_process_file(file_path):
-                if self.logger:
-                    self.logger.debug(f"[LSP] Skipping {file_path} - not supported by {self.language_id} LSP")
+                logger.debug(f"[LSP] Skipping {file_path} - not supported by {self.language_id} LSP")
                 continue
 
             try:
                 response = self.diagnostics(abs_file_path, wait_time=2.0)
             except TimeoutError as e:
                 # Timeout is not necessarily an error - file might be valid but LSP is slow
-                if self.logger:
-                    self.logger.warning(f"[LSP] Timeout acquiring diagnostics for {file_path}: {e}")
+                logger.warning(f"[LSP] Timeout acquiring diagnostics for {file_path}: {e}")
                 continue
             except Exception as e:
                 # Log and skip this file, but continue with others
-                if self.logger:
-                    self.logger.error(f"[LSP] Error acquiring diagnostics for {file_path}: {e}")
+                logger.error(f"[LSP] Error acquiring diagnostics for {file_path}: {e}")
                 raise e
             
             if response == []:

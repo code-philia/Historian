@@ -1,9 +1,12 @@
 import os
 import platform
+import logging
 
 from .utils import parse
 from rapidfuzz import fuzz
 from tree_sitter import Language, Parser
+
+logger = logging.getLogger("TRACE.enriched_semantic")
 
 def merge_matched_position(common_positions):
     """
@@ -273,7 +276,7 @@ def finer_grain_window(before: list[str], after: list[str], lang: str) -> dict:
     
     return new_window
 
-def construct_edit_hunk(edit: dict, repo_dir: str, lang: str, logger, expect_old_code):
+def construct_edit_hunk(edit: dict, repo_dir: str, lang: str, expect_old_code):
     """
     Convert a git hunk into an enriched hunk
     
@@ -306,9 +309,9 @@ def construct_edit_hunk(edit: dict, repo_dir: str, lang: str, logger, expect_old
             assert code == edit["after"]
     except:
         if expect_old_code:
-            logger.error(f"[SUT:TRACE] The edit before content does not match with the file content at {abs_file_path}:{edit_start_line_idx}-{edit_end_line_idx}.\nExpected code:\n{''.join(edit['before'])}\nActual code:\n{''.join(code)}")
+            logger.error(f"The edit before content does not match with the file content at {abs_file_path}:{edit_start_line_idx}-{edit_end_line_idx}.\nExpected code:\n{''.join(edit['before'])}\nActual code:\n{''.join(code)}")
         else:
-            logger.error(f"[SUT:TRACE] The edit after content does not match with the file content at {abs_file_path}:{edit_start_line_idx}-{edit_end_line_idx}.\nExpected code:\n{''.join(edit['after'])}\nActual code:\n{''.join(code)}")
+            logger.error(f"The edit after content does not match with the file content at {abs_file_path}:{edit_start_line_idx}-{edit_end_line_idx}.\nExpected code:\n{''.join(edit['after'])}\nActual code:\n{''.join(code)}")
         raise AssertionError
     code_suf = code_lines[edit_end_line_idx:]
     

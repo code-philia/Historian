@@ -4,11 +4,11 @@ import time
 from .language_server import LanguageServer
 
 class PyLanguageServer(LanguageServer):
-    def __init__(self, log: bool = False, logger=None):
+    def __init__(self, log: bool = False):
         language_id = "python"
         server_command = ['pyright-langserver', '--stdio']
         
-        super().__init__(language_id, server_command, log, logger=logger)
+        super().__init__(language_id, server_command, log)
         
     def _parse_rename_response(self, response, edits, old_name, new_name):
         """

@@ -4,7 +4,6 @@ import json
 import torch
 import logging
 
-
 from dotenv import load_dotenv
 from rank_bm25 import BM25Okapi
 from .code_window import CodeWindow
@@ -20,6 +19,8 @@ load_dotenv(dotenv_path=os.path.join(PROJ_ROOT, ".env"))
 
 GENERATOR_MODEL_PATH = os.getenv("GENERATOR_MODEL_PATH")
 DEVICE = os.getenv("DEVICE")
+
+logger = logging.getLogger("TRACE.Generator")
 
 def load_generator():
     config_class, model_class, tokenizer_class = (T5Config, T5ForConditionalGeneration, RobertaTokenizer)
@@ -102,7 +103,7 @@ def formalize_single_generator_input(sliding_window: CodeWindow, prompt: str, ls
     
     return source_seq
 
-def formalize_generator_dataset(sliding_windows: list[CodeWindow], prompt: str, lsp_services: list[str], prior_edits: list[CodeWindow], tokenizer, logger):
+def formalize_generator_dataset(sliding_windows: list[CodeWindow], prompt: str, lsp_services: list[str], prior_edits: list[CodeWindow], tokenizer):
     source_seqs = []
     for sliding_window, service in zip(sliding_windows, lsp_services):
         selected_prior_edits = select_prior_edits(sliding_window.before_edit_window(split_by_line=False), prior_edits, tokenizer)
@@ -111,7 +112,7 @@ def formalize_generator_dataset(sliding_windows: list[CodeWindow], prompt: str, 
         source_seqs.append(source_seq)
         
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT:TRACE] Generator input sequences are saved to debug/TRACE_generator_input_sequences.json")
+        logger.debug(f"Generator input sequences are saved to debug/TRACE_generator_input_sequences.json")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_generator_input_sequences.json", "w", encoding="utf-8") as f:
             json.dump(source_seqs, f, indent=2)
@@ -125,7 +126,7 @@ def formalize_generator_dataset(sliding_windows: list[CodeWindow], prompt: str, 
     
     return dataset
 
-def edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edit_description, language, generator, generator_tokenizer, logger):
+def edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edit_description, language, generator, generator_tokenizer):
     def group_and_sort_locations_by_file(edits):
         grouped = {}
 
@@ -150,7 +151,7 @@ def edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edi
     empty_snapshots = create_empty_snapshots(locations, repo_dir)
     
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(f"[SUT:TRACE] Empty snapshots created for generator inference is saved to debug/TRACE_empty_snapshots.json")
+        logger.debug(f"Empty snapshots created for generator inference is saved to debug/TRACE_empty_snapshots.json")
         os.makedirs("debug", exist_ok=True)
         with open("debug/TRACE_empty_snapshots.json", "w", encoding="utf-8") as f:
             json.dump(empty_snapshots, f, indent=2)
@@ -158,7 +159,7 @@ def edit_location_2_snapshots(label_predictions, repo_dir, prior_edit_hunks, edi
     # sliding window hunks are ranked by idx in empty snapshots
     # i-th sliding window hunk matches i-th service type        
     sliding_window_hunks, service_types = empty_snapshots_to_hunks(empty_snapshots)
-    input_dataset = formalize_generator_dataset(sliding_window_hunks, edit_description, service_types, prior_edit_hunks, generator_tokenizer, logger)
+    input_dataset = formalize_generator_dataset(sliding_window_hunks, edit_description, service_types, prior_edit_hunks, generator_tokenizer)
     
     # all_edit_solutions: list[list[str]], outer list is of length equal to number of sliding window hunks, inner list is of length beam size
     all_edit_solutions = generator_inference(input_dataset, generator, generator_tokenizer)
