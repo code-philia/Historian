@@ -980,6 +980,8 @@ def indexing_edits_within_snapshots(snapshots): # Also used in optimization/util
     """
     Indexing edits within snapshots.
     """
+    if snapshots == {}:
+        return snapshots
     idx = 0
     for file_path, snapshot in snapshots.items():
         for window in snapshot:
