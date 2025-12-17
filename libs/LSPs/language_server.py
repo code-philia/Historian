@@ -664,7 +664,7 @@ class LanguageServer(ABC):
         pass
     
     @abstractmethod
-    def _filter_diagnostics(self, diagnostics, last_edit_at_range, init_diagnose_msg):
+    def _filter_diagnostics(self, diagnostics, last_edit_region, init_diagnose_msg):
         """
         Filter out the diagnostics that are not very helpful
         If not implemented, return the original diagnostics
