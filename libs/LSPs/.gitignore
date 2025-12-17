@@ -1,4 +1,12 @@
-projects/*
-jdt-language-server/**  
+jdt-language-server/**
 !jdt-language-server/**/config.ini
 temp_data/**
+
+# Java project build artifacts
+projects/java_project/target/
+projects/java_project/.classpath
+projects/java_project/.project
+projects/java_project/.settings/
+projects/java_project/bin/
+projects/java_project/.idea/
+projects/java_project/*.iml

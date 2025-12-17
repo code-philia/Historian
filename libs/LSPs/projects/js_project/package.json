@@ -1,0 +1,12 @@
+{
+  "name": "js-lsp-test",
+  "version": "1.0.0",
+  "description": "Test project for LSP functionalities in JavaScript",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js"
+  },
+  "type": "module",
+  "author": "Your Name",
+  "license": "MIT"
+}

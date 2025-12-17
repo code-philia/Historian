@@ -9,6 +9,8 @@ class GoLanguageServer(LanguageServer):
         language_id = "go"
         server_command = ["gopls", "serve"]
         env = os.environ.copy()
+        # The following environment config is previously set to allow gopls(v0.17.1) to work when workspace does not contain go.mod 
+        # Currently (v0.20.0), it seems that gopls can still run without go.mod and below configs, despite some features may be limited.
         env["GO111MODULE"] = "off"  # Turn off Modules mode
         env["GOPATH"] = env.get("GOPATH", os.path.expanduser("~/go"))  # Stick to default GOPATH
         env["GOFLAGS"] = "-mod=mod"  # let gopls analyze local files
@@ -111,6 +113,10 @@ if __name__ == "__main__":
     print(f">>>>>>>> Check diagnostics:")
     response = server.diagnostics(file_path)
     print(json.dumps(response, indent=2, ensure_ascii=False))
+    
+    print(f">>>>>>>> Check hover:")
+    result = server.hover(file_path, {"line": 10, "character": 16})
+    print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check close:")
     response = server.close()

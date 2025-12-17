@@ -204,7 +204,36 @@ class LanguageServer(ABC):
             expected_file_path=file_path
         )
         return messages
+        
+    def hover(self, file_path: str, position: dict[str, int], wait_time: float = 0.5):
+        """
+        Get hover information (signature, docstring, type info) at a position.
+        
+        Args:
+            file_path: Absolute path to the file
+            position: {"line": int, "character": int}
+            wait_time: Time to wait for response
+        
+        Returns:
+            List[Dict]: LSP hover response messages
+        """
+        if self.workspace_file_version.get(file_path, 0) == 0:
+            self.did_open(file_path)
+        else:
+            self.did_change(file_path)
 
+        request_id = self._send_request(
+            "textDocument/hover",
+            params={
+                "textDocument": {
+                    "uri": f"file://{file_path}"
+                },
+                "position": position
+            }
+        )
+        messages = self._get_messages(request_id=request_id, message_num=1, wait_time=wait_time)
+        return messages
+    
     def close(self):
         request_id = self._send_request("shutdown")
         close_message = self._get_messages(request_id=request_id, message_num=1, wait_time=0.5)

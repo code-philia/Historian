@@ -1,5 +1,6 @@
 import os
 import json
+import time
 
 from typing import Dict
 from .language_server import LanguageServer
@@ -145,6 +146,7 @@ if __name__ == "__main__":
     # Get the list of all file paths in the workspace
     file_paths = server.get_all_file_paths(workspace)
     server.open_in_batch(file_paths)
+    time.sleep(0.5)  # Wait for the server to process all opened files
     
     print(f">>>>>>>> Check rename:")
     result = server.rename(file_path, {"line": 7, "character": 20}, "UserName")
@@ -156,6 +158,10 @@ if __name__ == "__main__":
     
     print(f">>>>>>>> Check diagnostics:")
     result = server.diagnostics(file_path, wait_time=2)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    
+    print(f">>>>>>>> Check hover:")
+    result = server.hover(file_path, {"line": 9, "character": 22})
     print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check close:")
@@ -178,6 +184,7 @@ if __name__ == "__main__":
     # Get the list of all file paths in the workspace
     file_paths = server.get_all_file_paths(workspace)
     server.open_in_batch(file_paths)
+    time.sleep(0.5)  # Wait for the server to process all opened files
     
     print(f">>>>>>>> Check rename:")
     result = server.rename(file_path, {"line": 12, "character": 17}, "ReversedString")
@@ -189,6 +196,10 @@ if __name__ == "__main__":
     
     print(f">>>>>>>> Check diagnostics:")
     result = server.diagnostics(file_path, wait_time=2)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    
+    print(f">>>>>>>> Check hover:")
+    result = server.hover(file_path, {"line": 12, "character": 26})
     print(json.dumps(result, indent=2, ensure_ascii=False))
     
     print(f">>>>>>>> Check close:")

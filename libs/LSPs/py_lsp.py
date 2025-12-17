@@ -92,6 +92,10 @@ if __name__ == "__main__":
     result = server.diagnostics(file_path, wait_time=2)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     
+    print(f">>>>>>>> Check hover:")
+    result = server.hover(file_path, {"line": 6, "character": 37})
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    
     print(f">>>>>>>> Check close:")
     result = server.close()
     print(json.dumps(result, indent=2, ensure_ascii=False))

@@ -130,7 +130,6 @@ if __name__ == "__main__":
 
     # Get the list of all file paths in the workspace
     file_paths = server.get_all_file_paths(workspace)
-    server.open_in_batch(file_paths)
     time.sleep(2)  # Wait for files to be processed
 
     print(f"\n>>>>>>>> Check rename:")
@@ -143,6 +142,10 @@ if __name__ == "__main__":
 
     print(f"\n>>>>>>>> Check diagnostics:")
     result = server.diagnostics(file_path, wait_time=5)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    
+    print(f">>>>>>>> Check hover:")
+    result = server.hover(file_path, {"line": 8, "character": 30})
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
     print(f"\n>>>>>>>> Check close:")
