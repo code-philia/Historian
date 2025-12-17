@@ -664,14 +664,17 @@ class LanguageServer(ABC):
         pass
     
     @abstractmethod
-    def _filter_diagnostics(self, diagnostics, last_edit_region, init_diagnose_msg):
+    def _filter_diagnostics(self, diagnostics, locations_to_ignore, init_diagnose_msg):
         """
         Filter out the diagnostics that are not very helpful
         If not implemented, return the original diagnostics
         """
         pass
     
-    def acquire_diagnose(self, files_to_diagnose, last_edit_region):
+    def acquire_diagnose(self, files_to_diagnose, locations_to_ignore):
+        if not isinstance(locations_to_ignore, list):
+            locations_to_ignore = [locations_to_ignore]
+        
         diagnostics = []
         for file_path in files_to_diagnose:
             abs_file_path = os.path.join(self.workspace_dir, file_path)
@@ -713,7 +716,7 @@ class LanguageServer(ABC):
             diagnostics.extend(response["params"]["diagnostics"])
             
         if hasattr(self, "init_diagnose_msg"):
-            diagnostics = self._filter_diagnostics(diagnostics, last_edit_region, self.init_diagnose_msg)
+            diagnostics = self._filter_diagnostics(diagnostics, locations_to_ignore, self.init_diagnose_msg)
         else:
             diagnostics = self._filter_diagnostics(diagnostics, None, [])
         if diagnostics is None or len(diagnostics) == 0:

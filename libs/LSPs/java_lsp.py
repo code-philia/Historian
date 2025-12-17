@@ -67,7 +67,7 @@ class JavaLanguageServer(LanguageServer):
                             })
         return edits
     
-    def _filter_diagnostics(self, diagnostics, last_edit_region, init_diagnose_msg):
+    def _filter_diagnostics(self, diagnostics, locations_to_ignore, init_diagnose_msg):
         """
         * Filter out non-serious diagnostics.
         * All diagnostics please refer to: https://www.javadoc.io/doc/org.aspectj/aspectjtools/1.8.4/constant-values.html, at table org.aspectj.org.eclipse.jdt.core.compiler.IProblem.
@@ -89,9 +89,13 @@ class JavaLanguageServer(LanguageServer):
             if jdtls_diagnostics[diagnostic["code"]]["whitelisted"]:
                 if diagnostic["severity"] > 2: # severity 1: error, 2: warning, 3: info
                     continue
-                if last_edit_region and diagnostic["range"]["start"]["line"] in last_edit_region["lines"] and diagnostic["file_path"] == last_edit_region["file_path"]:
-                    continue
-                filtered_diagnostics.append(diagnostic)
+                should_ignore = False
+                for location in locations_to_ignore:
+                    if diagnostic["file_path"] == location["file_path"] and diagnostic["range"]["start"]["line"] in location["lines"]:
+                        should_ignore = True
+                        break
+                if not should_ignore:
+                    filtered_diagnostics.append(diagnostic)
             
         return filtered_diagnostics
         

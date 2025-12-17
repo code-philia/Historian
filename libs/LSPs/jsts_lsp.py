@@ -100,7 +100,7 @@ class TsLanguageServer(LanguageServer):
             edits[file_path].extend(changes)
         return edits
     
-    def _filter_diagnostics(self, diagnostics, last_edit_region, init_diagnose_msg):
+    def _filter_diagnostics(self, diagnostics, locations_to_ignore, init_diagnose_msg):
         """
         Filter the diagnostics by the last edit at range, more diagnostics please refer to: https://typescript.tv/errors/
         """
@@ -121,9 +121,13 @@ class TsLanguageServer(LanguageServer):
                 # well, we can't guarantee we have collected all errors ...
                 continue
             if diagnose_codes[str(diagnostic["code"])]["whitelisted"]:
-                if last_edit_region and diagnostic["range"]["start"]["line"] in last_edit_region["lines"] and diagnostic["file_path"] == last_edit_region["file_path"]:
-                    continue
-                filtered_diagnostics.append(diagnostic)
+                should_ignore = False
+                for location in locations_to_ignore:
+                    if diagnostic["file_path"] == location["file_path"] and diagnostic["range"]["start"]["line"] in location["lines"]:
+                        should_ignore = True
+                        break
+                if not should_ignore:
+                    filtered_diagnostics.append(diagnostic)
         
         return filtered_diagnostics
     

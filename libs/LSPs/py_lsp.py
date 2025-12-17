@@ -29,7 +29,7 @@ class PyLanguageServer(LanguageServer):
             edits[file_path].extend(changes["edits"])
         return edits
     
-    def _filter_diagnostics(self, diagnostics, last_edit_region, init_diagnose_msg):
+    def _filter_diagnostics(self, diagnostics, locations_to_ignore, init_diagnose_msg):
         """
         Filter out non-serious diagnostics, all diagnostics please refer to https://github.com/microsoft/pyright/blob/main/docs/configuration.md
         """
@@ -55,9 +55,13 @@ class PyLanguageServer(LanguageServer):
             if "code" not in diagnostic:
                 continue
             if diagnostic["code"] in white_list_diagnostics:
-                if last_edit_region and diagnostic["file_path"] == last_edit_region["file_path"] and diagnostic["range"]["start"]["line"] in last_edit_region["lines"]:
-                    continue
-                filtered_diagnostics.append(diagnostic)
+                should_ignore = False
+                for location in locations_to_ignore:
+                    if diagnostic["file_path"] == location["file_path"] and diagnostic["range"]["start"]["line"] in location["lines"]:
+                        should_ignore = True
+                        break
+                if not should_ignore:
+                    filtered_diagnostics.append(diagnostic)
         return filtered_diagnostics
     
     def close(self):
