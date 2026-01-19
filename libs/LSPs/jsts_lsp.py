@@ -105,6 +105,8 @@ class TsLanguageServer(LanguageServer):
         """
         Filter the diagnostics by the last edit at range, more diagnostics please refer to: https://typescript.tv/errors/
         """
+        if locations_to_ignore is None:
+            locations_to_ignore = []
         with open("LSPs/typescript-language-server/typescript_diagnose_code.json", "r") as f:
             diagnose_codes = json.load(f)
             

@@ -33,6 +33,8 @@ class PyLanguageServer(LanguageServer):
         """
         Filter out non-serious diagnostics, all diagnostics please refer to https://github.com/microsoft/pyright/blob/main/docs/configuration.md
         """
+        if locations_to_ignore is None:
+            locations_to_ignore = []
         white_list_diagnostics = [
             "reportUnusedImport",
             "reportUnusedClass",
@@ -47,16 +49,16 @@ class PyLanguageServer(LanguageServer):
             return filtered_diagnostics
         
         for diagnostic in diagnostics:
-            if not diagnostic["file_path"].endswith(".py"):
+            if not diagnostic["file_path"].endswith(".py"): # ignore diagnose in non-python files
                 continue
             if diagnostic["message"] in init_diagnose_msg:
                 # If this diagnose already exists when the project is initialized, then this diagnose is not caused by user editing, no need to address
                 continue
             if "code" not in diagnostic:
                 continue
-            if diagnostic["code"] in white_list_diagnostics:
+            if diagnostic["code"] in white_list_diagnostics: # only keep serious diagnostics inside white list
                 should_ignore = False
-                for location in locations_to_ignore:
+                for location in locations_to_ignore: # ignore diagnostics in the locations to ignore
                     if diagnostic["file_path"] == location["file_path"] and diagnostic["range"]["start"]["line"] in location["lines"]:
                         should_ignore = True
                         break

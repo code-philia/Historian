@@ -40,6 +40,9 @@ class GoLanguageServer(LanguageServer):
         """
         Filter out non-serious diagnostics, all diagnostics please refer to https://pkg.go.dev/golang.org/x/tools/internal/typesinternal#ErrorCode
         """
+        if locations_to_ignore is None:
+            locations_to_ignore = []
+            
         while_list_diagnostics = [
             "UnusedImport",
             "UnusedExpr",

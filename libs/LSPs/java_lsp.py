@@ -73,6 +73,8 @@ class JavaLanguageServer(LanguageServer):
         * All diagnostics please refer to: https://www.javadoc.io/doc/org.aspectj/aspectjtools/1.8.4/constant-values.html, at table org.aspectj.org.eclipse.jdt.core.compiler.IProblem.
         * For example, comments like //TODO, //FIXME, have diagnose "Task", with code 16777216, and severity 3.
         """
+        if locations_to_ignore is None:
+            locations_to_ignore = []
         with open("LSPs/jdt-language-server/jdtls_diagnose_code.json", "r") as f:
             jdtls_diagnostics = json.load(f)
 

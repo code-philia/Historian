@@ -747,7 +747,7 @@ class LanguageServer(ABC):
         if hasattr(self, "init_diagnose_msg"):
             diagnostics = self._filter_diagnostics(diagnostics, locations_to_ignore, self.init_diagnose_msg)
         else:
-            diagnostics = self._filter_diagnostics(diagnostics, None, [])
+            diagnostics = self._filter_diagnostics(diagnostics, [], [])
         if diagnostics is None or len(diagnostics) == 0:
             self.init_diagnose_msg = []
         else:
