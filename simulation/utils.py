@@ -919,6 +919,7 @@ def snapshot_2_locations(snapshots):
     """
     Convert snapshots to edit locations.
     """
+    enriched_snapshots = add_info_to_snapshots(snapshots)
     replace_edit_locations = []
     insert_edit_locations = []
 
@@ -952,6 +953,7 @@ def snapshot_2_locations(snapshots):
                         "atLines": [line_idx],
                         "editType": "insert",
                         "after": window["after"],
+                        "structural_path": window["structural_path"],
                         "confidence": window.get("confidence", None),
                         "suggestionRank": None
                     }
@@ -968,6 +970,71 @@ def snapshot_2_locations(snapshots):
             loc["suggestionRank"] = sorted_confidences.index(loc["confidence"])
     
     return replace_edit_locations, insert_edit_locations
+
+def get_version(snapshot, version):
+    assert version in ["parent", "child"]
+    version_content = []
+    for window in snapshot:
+        if isinstance(window, list):
+            version_content.extend(window)
+        else:
+            if version == "parent":
+                version_content.extend(window["before"])
+            else:
+                version_content.extend(window["after"])
+        
+    return version_content
+
+def add_info_to_snapshots(snapshots):
+    for rel_file_path, snapshot in snapshots.items():
+        pre_edit_line_idx = 0
+        post_edit_line_idx = 0
+        parent_version_content = "".join(get_version(snapshot, "parent"))
+        for widx, window in enumerate(snapshot):
+            if isinstance(window, list):
+                pre_edit_line_idx += len(window)
+                post_edit_line_idx += len(window)
+                continue
+            window["parent_version_range"] = {
+                "start": pre_edit_line_idx,
+                "end": pre_edit_line_idx + len(window["before"]),
+            }
+            pre_edit_line_idx += len(window["before"])
+            window["child_version_range"] = {
+                "start": post_edit_line_idx,
+                "end": post_edit_line_idx + len(window["after"]),
+            }
+            post_edit_line_idx += len(window["after"])
+
+            pre_edit_line_idx = window["parent_version_range"]["start"]
+            post_edit_line_idx = window["parent_version_range"]["end"]
+
+            line_index = window["parent_version_range"]["start"]
+            language = "python" #check_language(rel_file_path)
+            # print("[WARNING:SUT] At src/optimization/utils.py, assume language is python")
+
+            if window["before"] == [] and window["after"] != []:
+                line_index -= 1
+
+            prev_window = snapshot[widx-1] if widx > 0 else None
+            next_window = snapshot[widx+1] if widx < len(snapshot)-1 else None
+            
+            if prev_window is None:
+                window["prefix"] = []
+            else:
+                window["prefix"] = prev_window[-1 * min(3, len(prev_window)):]
+            
+            if next_window is None:
+                window["suffix"] = []
+            else:
+                window["suffix"] = next_window[:min(3, len(next_window))]
+
+            structural_path = find_code_structure(parent_version_content, line_index, language)
+
+            window["structural_path"] = structural_path
+            window["file_path"] = rel_file_path
+
+    return snapshots
 
 def overlap_percentage(list_a, list_b):
     set_a = set(list_a)

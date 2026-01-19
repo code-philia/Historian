@@ -369,12 +369,14 @@ def match_suggestion_with_groundtruth(pred_snapshots, gdth_snapshots):
                                 window["flowKeeping"] = True if gdth_loc["allowed_as_next"] else False
                                 break
                     break
-        else:
+        else: # if 2 insert at same code structure and have high bleu, consider as matched
             for gdth_loc in gdth_insert_locations:
                 if gdth_loc["file_path"] != pred_loc["file_path"]:
                     continue
-                gdth_at_lines = gdth_loc["atLines"]
-                if pred_at_lines == gdth_at_lines and get_bleu(pred_loc["after"], gdth_loc["after"]) > 50:
+                gdth_at_structures = gdth_loc["structural_path"]
+                pred_at_structures = pred_loc["structural_path"]
+                bleu_score = get_bleu(pred_loc["after"], gdth_loc["after"])
+                if pred_at_structures == gdth_at_structures and bleu_score > 50:
                     matched_locations.append({
                         "atLines": pred_at_lines,
                         "editType": pred_loc["editType"],
@@ -383,7 +385,7 @@ def match_suggestion_with_groundtruth(pred_snapshots, gdth_snapshots):
                         "predIdx": pred_loc["idx"],
                         "matchWith": gdth_loc["idx"],
                         "flowKeeping": True if gdth_loc["allowed_as_next"] else False,
-                        "BLEU-4": get_bleu(pred_loc["after"], gdth_loc["after"]),
+                        "BLEU-4": bleu_score,
                     })
                     for file_path, snapshots in pred_snapshots.items():
                         for window in snapshots:
