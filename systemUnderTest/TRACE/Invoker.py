@@ -70,7 +70,7 @@ def load_invoker():
     config.vocab_size = len(tokenizer)
     invoker = Invoker(encoder, config)
     
-    invoker.load_state_dict(torch.load(os.path.join(PROJ_ROOT, INVOKER_MODEL_PATH)))
+    invoker.load_state_dict(torch.load(os.path.join(PROJ_ROOT, INVOKER_MODEL_PATH), weights_only=True, map_location=DEVICE))
     invoker.to(DEVICE)
     
     return invoker, tokenizer

@@ -128,7 +128,9 @@ def load_locator():
     locator.load_state_dict(
         torch.load(
             os.path.join(PROJ_ROOT, LOCATOR_MODEL_PATH), 
-            map_location = DEVICE), 
+            map_location = DEVICE,
+            weights_only = True
+        ), 
         strict = False
     )
     locator.eval()
