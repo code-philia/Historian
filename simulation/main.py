@@ -5,6 +5,7 @@ import random
 import asyncio
 import inspect
 import logging
+import importlib
 
 from .utils import *
 from .commit import Commit
@@ -56,10 +57,8 @@ def main(json_input: dict):
     system_under_test = json_input["system_under_test"]
     status = json_input["status"]
 
-    if system_under_test == "TRACE":
-        import systemUnderTest.TRACE.main as SUT
-    elif system_under_test == "AgenticTRACE":
-        import systemUnderTest.AgenticTRACE.main as SUT
+    module_path = f"systemUnderTest.{system_under_test}.main"
+    SUT = importlib.import_module(module_path)
 
     if status == "init":
         logger.info(f"------------------------ Phase 1: Initialization ------------------------")
