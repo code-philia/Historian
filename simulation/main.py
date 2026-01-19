@@ -464,7 +464,7 @@ def evaluate_traiditional_metrics(pred_locations, gold_locations, matched_locati
     
     if len(pred_locations) > 0 and pred_locations[0]["confidence"] is None:
         logger.warning("Current SUT does not provide confidence scores or suggestion ranks for suggested edits. Top-k metrics cannot be calculated.")
-        return
+        return traditional_metrics
     
     # kth tp
     for k in ["1", "3", "5", "10"]:
