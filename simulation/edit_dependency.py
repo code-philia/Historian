@@ -38,7 +38,7 @@ def get_all_identifiers(tree):
         if not parent:
             return "unknown"
             
-        # 根据不同语言的语法树结构判断标识符类型
+        # Determine identifier type based on syntax tree structure of different languages
         if parent.type == "function_definition" or parent.type == "function_declaration" or parent.type == "type_declaration":
             return "function"
         elif parent.type == "class_definition" or parent.type == "class_declaration":
@@ -50,7 +50,7 @@ def get_all_identifiers(tree):
         elif parent.type in ["variable_declarator", "assignment", "variable_declaration"]:
             return "variable"
         
-        # 向上查找更多的父节点来确定类型
+        # Look up more parent nodes to determine the type
         grandparent = parent.parent
         if grandparent:
             if grandparent.type == "method_definition" or grandparent.type == "method_declaration":
@@ -99,7 +99,7 @@ def get_all_identifiers(tree):
         return True  # fallback
 
     def visit_node(node):
-        if node.is_named:  # 只处理命名节点
+        if node.is_named:  # Only process named nodes
             if node.type == "identifier" or "identifier" in node.type:
                 # if node text is a keyword, skip it
                 if node.text.decode("utf-8") in ["if", "else", "while", "for", "return", "break", "continue", "pass", "import", "from", "class", "def", "async", "await", "try", "except", "finally", "with", "as", "assert", "del", "global", "nonlocal", "yield", "raise", "import", "from", "as", "assert", "del", "global", "nonlocal", "yield", "raise", "assert", "del", "global", "nonlocal", "yield", "raise", "int", "float", "str", "bool", "None", "True", "False"]:
@@ -118,7 +118,7 @@ def get_all_identifiers(tree):
                     "kind": kind
                 })
         
-        # 递归访问所有子节点
+        # Recursively visit all child nodes
         for child in node.children:
             visit_node(child)
     

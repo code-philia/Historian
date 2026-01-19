@@ -106,7 +106,7 @@ class LanguageServer(ABC):
         self.workspace_file_version[file_path] = 1
     
     def did_change(self, file_path: str):
-        # 读取整个文件内容
+        # Read the entire file content
         with open(file_path, 'r') as f:
             content = f.read()
 

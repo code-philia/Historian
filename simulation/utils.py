@@ -30,10 +30,10 @@ def clone_repo(user_name: str, project_name: str, target_dir: str):
     subprocess.run(command, shell=True)
 
 def detect_extension(file_names: list[str]):
-    # 使用os.path.basename 获取文件名
+    # Use os.path.basename to get the file name
     for file_name in file_names:
         filename = os.path.basename(file_name)
-        # 使用splitext分割文件名和后缀
+        # Use splitext to split file name and extension
         file_name_elements = filename.split('.')
         if len(file_name_elements) == 2:
             extension = '.'+file_name_elements[-1]
@@ -257,7 +257,7 @@ def find_code_structure(code, line_index, language):
                     function_name = child.text.decode("utf-8")
                     call_info = function_name
                 elif child.type == "selector_expression":
-                    # 方法调用如 obj.Method()
+                    # Method call like obj.Method()
                     function_name = child.text.decode("utf-8")
                     call_info = function_name
                 elif child.type == "argument_list":
@@ -349,7 +349,7 @@ def find_code_structure(code, line_index, language):
                     function_name = child.text.decode("utf-8")
                     call_info = function_name
                 elif child.type == "field_access":
-                    # 链式调用
+                    # Chained call
                     function_name = child.text.decode("utf-8")
                     call_info = function_name
                 elif child.type == "argument_list":
@@ -413,14 +413,14 @@ def find_code_structure(code, line_index, language):
                     declaration += child.text.decode("utf-8")
             return declaration, name
         
-        # 箭头函数 (variable_declarator 中包含 arrow_function)
+        # Arrow function (variable_declarator contains arrow_function)
         elif node.type == "arrow_function":
-            # 箭头函数本身没有名字，需要从父节点获取
+            # Arrow function itself has no name, need to get it from parent node
             for child in node.children:
                 if child.type == "formal_parameters":
                     declaration += child.text.decode("utf-8")
                 elif child.type == "identifier":
-                    # 单参数箭头函数
+                    # Single parameter arrow function
                     declaration += "(" + child.text.decode("utf-8") + ")"
             declaration += " =>"
             return declaration, name
@@ -437,7 +437,7 @@ def find_code_structure(code, line_index, language):
                     function_name = child.text.decode("utf-8")
                     call_info = function_name
                 elif child.type == "member_expression":
-                    # 方法调用如 obj.method()
+                    # Method call like obj.method()
                     function_name = child.text.decode("utf-8")
                     call_info = function_name
                 elif child.type == "arguments":
@@ -509,7 +509,7 @@ def find_code_structure(code, line_index, language):
                     declaration += child.text.decode("utf-8")
             return declaration, name
         
-        # 接口声明
+        # Interface declaration
         elif node.type == "interface_declaration":
             for child in node.children:
                 if child.type == "interface":
@@ -523,7 +523,7 @@ def find_code_structure(code, line_index, language):
                     declaration += " " + child.text.decode("utf-8")
             return declaration, name
         
-        # 类型别名
+        # Type alias
         elif node.type == "type_alias_declaration":
             for child in node.children:
                 if child.type == "type":
@@ -570,7 +570,7 @@ def find_code_structure(code, line_index, language):
                         return arg_text
         return None
 
-    # ============ 语言配置 ============
+    # ============ Language Configuration ============
     language_nodes = {
         "python": {
             "class": "class_definition",
@@ -622,10 +622,10 @@ def find_code_structure(code, line_index, language):
 
     node_types = language_nodes[language]
 
-    # 遍历语法树找到行号对应的结构路径
+    # Traverse syntax tree to find the structure path corresponding to the line number
     def traverse(node, current_structure=[]):
         if node.start_point[0] <= line_index <= node.end_point[0]:
-            # 类定义
+            # Class definition
             if node.type == node_types['class']:
                 class_declaration, class_name = node_types["get_signature_fn"](node)
                 if class_declaration:
@@ -636,7 +636,7 @@ def find_code_structure(code, line_index, language):
                         "at_line": node.start_point[0]
                     })
 
-            # 函数定义
+            # Function definition
             elif node.type == node_types['function']:
                 function_declaration, function_name = node_types["get_signature_fn"](node)
                 if function_declaration:
@@ -647,7 +647,7 @@ def find_code_structure(code, line_index, language):
                         "at_line": node.start_point[0]
                     })
 
-            # 方法定义
+            # Method definition
             elif node_types.get('method') and node.type == node_types['method']:
                 method_declaration, method_name = node_types["get_signature_fn"](node)
                 if method_declaration:
@@ -658,7 +658,7 @@ def find_code_structure(code, line_index, language):
                         "at_line": node.start_point[0]
                     })
 
-            # 函数调用
+            # Function call
             elif node_types.get('call') and node.type == node_types['call']:
                 if "get_call_info_fn" in node_types:
                     function_name, call_signature = node_types["get_call_info_fn"](node)
@@ -670,7 +670,7 @@ def find_code_structure(code, line_index, language):
                             "at_line": node.start_point[0]
                         }
                         
-                        # 查找参数信息
+                        # Find argument information
                         if "find_argument_fn" in node_types:
                             argument_info = node_types["find_argument_fn"](node, line_index)
                             if argument_info:
@@ -678,7 +678,7 @@ def find_code_structure(code, line_index, language):
                         
                         current_structure.append(call_entry)
 
-            # TypeScript 接口
+            # TypeScript interface
             elif node_types.get('interface') and node.type == node_types['interface']:
                 interface_declaration, interface_name = node_types["get_signature_fn"](node)
                 if interface_declaration:
@@ -689,7 +689,7 @@ def find_code_structure(code, line_index, language):
                         "at_line": node.start_point[0]
                     })
             
-            # TypeScript 类型别名
+            # TypeScript type alias
             elif node_types.get('type_alias') and node.type == node_types['type_alias']:
                 type_declaration, type_name = node_types["get_signature_fn"](node)
                 if type_declaration:
@@ -700,11 +700,11 @@ def find_code_structure(code, line_index, language):
                         "at_line": node.start_point[0]
                     })
 
-            # JavaScript 箭头函数
+            # JavaScript arrow function
             elif node_types.get('arrow_function') and node.type == node_types['arrow_function']:
                 arrow_declaration, _ = node_types["get_signature_fn"](node)
                 if arrow_declaration:
-                    # 尝试从父节点获取变量名
+                    # Try to get variable name from parent node
                     arrow_name = None
                     if node.parent and node.parent.type == "variable_declarator":
                         for sibling in node.parent.children:
@@ -719,7 +719,7 @@ def find_code_structure(code, line_index, language):
                         "at_line": node.start_point[0]
                     })
 
-            # 递归检查子节点
+            # Recursively check child nodes
             for child in node.children:
                 result = traverse(child, current_structure)
                 if result:
@@ -841,7 +841,7 @@ def extract_hunks(commit_url: str, REPOS_PATH: str) -> tuple:
         match = re.search(r'@@[^\n]*\n(.+)', section, re.DOTALL)
         if not match:
             raise ValueError(f"4 {commit_url} Error: Edit fail to match @@ -xx,xx +xx,xx @@")
-        # 匹配@@行之后的内容
+        # Match content after the @@ line
         after_at_symbol_content = match.group(1)
         # form snapshot: each element:
         # type 1: list of line of code, unchanged

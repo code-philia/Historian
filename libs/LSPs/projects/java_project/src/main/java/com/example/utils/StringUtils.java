@@ -1,7 +1,7 @@
 package com.example.utils;
 
 public class StringUtils {
-    // 反转字符串
+    // Reverse string
     public static String reverse(String input) {
         if (input == null) {
             return "";

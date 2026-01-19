@@ -1,12 +1,12 @@
 package config
 
-// Config 应用程序配置
+// Config application configuration
 type Config struct {
 	AppName string
 	Version string
 }
 
-// GetConfig 返回默认配置
+// GetConfig returns default configuration
 func GetConfig() Config {
 	return Config{
 		AppName: "ToyLSPApp",

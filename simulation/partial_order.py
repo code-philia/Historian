@@ -121,7 +121,7 @@ def restore_edit_order(commit_snapshot, commit_url, mock_order=True):
     for edge in partial_orders:
         G.add_edge(edge["src"], edge["tgt"])
 
-    G.add_nodes_from([e["idx"] for e in edits])  # 显式补充所有编辑节点
+    G.add_nodes_from([e["idx"] for e in edits])  # Explicitly add all edit nodes
 
     degrees = dict(G.in_degree())
     min_deg = min(degrees.values())

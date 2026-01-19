@@ -2,13 +2,13 @@ import { reverseString } from './utils/stringUtils';
 import { addNumbers } from './utils/mathUtils';
 import { UserType } from './types';
 
-// 测试用户对象
+// Test user object
 const user: UserType = {
     name: "Alice",
     age: 25
 };
 
-// 使用工具函数
+// Use utility functions
 function processUser(user: UserType): void {
     const reversed = reverseString(user.name);
     const newAge = addNumbers(user.age, 1);
