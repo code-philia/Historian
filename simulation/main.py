@@ -18,6 +18,7 @@ REPOS_DIR = os.getenv("REPOS_DIR") # this directory should be the absolute path 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR")
 SUT = os.getenv("SUT")
 FLOW_ANALYSIS_ENABLED = os.getenv("FLOW_ANALYSIS", "False").lower() in ("true", "1", "t", "y", "yes")
+EVAL_SET = os.getenv("EVAL_SET", "simulation/testset.json")
 os.makedirs(REPOS_DIR, exist_ok=True)
 
 # Global variables
@@ -479,6 +480,8 @@ def calculate_bleu_between_snapshots(pred_snapshots, gdth_snapshots):
     Assume each snapshot contains only one edit hunk. This function evaluates the BLEU-4 between them.
     If the location does not match, return 0. Otherwise, calculate the BLEU-4 score between the after contents.
     """
+    if not pred_snapshots:
+        return 0.0
     for file_path, pred_snapshot in pred_snapshots.items():
         gold_snapshot = gdth_snapshots[file_path]
         try:
@@ -581,7 +584,7 @@ def rq3_flow_keeper(url, sut):
 
 if __name__ == "__main__":
     random.seed(42)
-    with open("simulation/testset.json", "r") as f:
+    with open(EVAL_SET, "r") as f:
         test_urls = json.load(f)
 
     simulated_urls = 0

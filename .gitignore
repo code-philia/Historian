@@ -5,4 +5,5 @@
 .env
 debug/*
 output/*
+logs/*
 simulation/debug_testset.json

@@ -24,6 +24,7 @@ class Commit:
         self.commit_url = commit_url
         self.system_under_test = system_under_test
 
+        # If we can find a simulation record for this commit, we will just load the record, and send record to frontend every time it request for next edit suggestion
         record_fp = os.path.join(OUTPUT_DIR, f"{self.project_name}-{self.commit_sha}-{self.system_under_test}-simulation-results.json")
         if os.path.exists(record_fp):
             with open(record_fp, "r") as f:

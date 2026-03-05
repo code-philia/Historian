@@ -221,6 +221,46 @@ pip install -r requirements.txt
     ```
 
 
+## Run Claude as baseline
+
+1. Install Claude Code SDK:
+
+    ```bash
+    pip install claude-code-sdk
+    npm install -g @anthropic-ai/claude-code
+    ```
+
+2. Setup configurations in `.env`:
+
+    ```bash
+    SUT=Claude  # system under test
+    EVAL_SET= # default is `simulation/testset.json`
+    REPOS_DIR= # path to clone all simulated repositories
+    OUTPUT_DIR= # path to save simulation results
+    LOG_DIR= # path to save Claude chat logs
+    FLOW_ANALYSIS= # whether to enable flow pattern analysis (true/false)
+
+    # Claude specific configurations
+    ANTHROPIC_API_KEY= # your Anthropic API key
+    ANTHROPIC_BASE_URL= # your Anthropic base URL (if using a proxy, otherwise leave empty)
+
+    # If you need to evaluate flow patterns (FLOW_ANALYSIS=true):
+    OPENAI_API_KEY= # your OpenAI API key
+    OPENAI_BASE_URL= # your OpenAI base URL (if any)
+    ```
+
+3. Run simulation:
+
+    ```bash
+    python -m simulation.main
+
+    # Results will be saved to:
+    # output/{project}-{commit_sha}-Claude-simulation-results.json
+    # Chat logs will be saved to:
+    # {LOG_DIR}/Claude/{project}-{commit_sha}/chat_{step}.json
+    ```
+
+
 ## Implement Your Own Method
 
 1. Implement the required API in `systemUnderTest/YourMethod/main.py`:
